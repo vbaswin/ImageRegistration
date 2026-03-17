@@ -1,2 +1,22 @@
 QWidget { background-color: #070F2B; }
-#rightControls { background-color: #355872; }
+
+#rightControls { background-color: #1A3263; }
+
+QPushButton {
+    color: white;
+    border: none;
+
+    background-color:   #406093;
+    font-family: "JetBrainsMOno Nerd Font", "JetBrains Mono", monospace;
+/*background-color: transparant;*/
+font-size: 14px;
+    padding: 6px 12px;
+    border-radius: 10px;
+}
+QPushButton:hover {
+    background-color: #3E3E42;
+/*    border-radius: 25px;*/
+}
+QPushButton:checked {
+    background-color: #007ACC;
+}

@@ -29,4 +29,21 @@ void MainWindow::setupUI()
     // autoRegisterBtn->
     QVBoxLayout *vLayout = new QVBoxLayout(m_rightControlsWidget);
     vLayout->addWidget(autoRegisterBtn);
+
+    m_vtkWidget->SetRenderWindow(m_renderWindow);
+
+    m_renderWindow->AddRenderer(m_leftRenderer);
+    m_renderWindow->AddRenderer(m_rightRenderer);
+
+    m_leftRenderer->SetBackground(2 / 255.0, 8 / 255.0, 5 / 255.0);
+    m_rightRenderer->SetBackground(7 / 255.0, 3 / 255.0, 6 / 255.0);
+
+    // [xmin, ymin, xmax, ymax]
+    double leftViewPort[4] = {0.0, 0.0, 0.5, 1.0};
+    double rightViewPort[4] = {0.5, 0.0, 1.0, 1.0};
+
+    m_leftRenderer->SetViewport(leftViewPort);
+    m_rightRenderer->SetViewport(rightViewPort);
+
+    // m_renderWindow->Render();
 }

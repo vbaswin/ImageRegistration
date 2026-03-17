@@ -17,7 +17,7 @@ void MainWindow::setupUI()
     this->setCentralWidget(m_container);
     QHBoxLayout *hLayout = new QHBoxLayout(m_container);
 
-    m_vtkWidget = new QWidget(m_container);
+    m_vtkWidget = new QVTKOpenGLNativeWidget(m_container);
     m_rightControlsWidget = new QWidget(m_container);
     m_rightControlsWidget->setObjectName("rightControls");
 

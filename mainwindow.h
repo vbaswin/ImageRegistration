@@ -1,5 +1,7 @@
 #pragma once
 #include <QMainWindow>
+#include <QVTKOpenGLNativeWidget.h>
+#include "vtkImageData.h"
 
 class MainWindow : public QMainWindow
 {
@@ -13,6 +15,6 @@ public:
 
 private:
     QWidget *m_container = nullptr;
-    QWidget *m_vtkWidget = nullptr;
+    QVTKOpenGLNativeWidget *m_vtkWidget = nullptr;
     QWidget *m_rightControlsWidget = nullptr;
 };

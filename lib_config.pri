@@ -84,7 +84,14 @@ INCLUDEPATH += "$$PCL_INSTALL/3rdParty/FLANN/include"
 # 2. Linker Directories
 QMAKE_LIBDIR += "$$PCL_INSTALL/lib"
 QMAKE_LIBDIR += "$$PCL_INSTALL/3rdParty/Boost/lib"
+QMAKE_LIBDIR += "$$PCL_INSTALL/3rdParty/FLANN/lib"
 
-# 3. Core Libraries (Release mode)
-# If building in Debug, suffix these with 'd' (e.g., pcl_common_debug.lib or pcl_commond.lib)
-LIBS += -lpcl_common
+LIBS += \
+    -lpcl_common \
+    -lpcl_kdtree \
+    -lpcl_search \
+    -lpcl_features \
+    -lpcl_filters \
+    -lpcl_registration \
+    -lpcl_io \
+    -lflann_cpp_s

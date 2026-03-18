@@ -2,10 +2,12 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 
-MainWindow::MainWindow(QWidget *parent)
+MainWindow::MainWindow(std::shared_ptr<RegisterViewModel> rVM, QWidget *parent)
     : QMainWindow(parent)
+    , m_regVM(rVM)
 {
     setupUI();
+    setupData();
     this->resize(1920, 1080);
 }
 
@@ -46,4 +48,12 @@ void MainWindow::setupUI()
     m_rightRenderer->SetViewport(rightViewPort);
 
     // m_renderWindow->Render();
+}
+
+void MainWindow::setupData()
+{
+    m_stlPolyData = m_regVM->getStlData();
+    m_stlMapper->SetInputData(m_stlPolyData);
+    m_stlActor->SetMapper(m_stlMapper);
+    m_leftRenderer->AddActor(m_stlActor);
 }

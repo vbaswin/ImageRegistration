@@ -13,11 +13,13 @@ include(./lib_config.pri)
 SOURCES += \
     dataloader.cpp \
     main.cpp \
-    mainwindow.cpp
+    mainwindow.cpp \
+    registerviewmodel.cpp
 
 HEADERS += \
     dataloader.h \
-    mainwindow.h
+    mainwindow.h \
+    registerviewmodel.h
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

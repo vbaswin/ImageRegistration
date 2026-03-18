@@ -1,7 +1,7 @@
 #pragma once
 #include <QObject>
-#include "vtkPolyData.h"
 #include "vtkSTLReader.h"
+#include <vtkPolyData.h>
 
 class DataLoader : public QObject
 {
@@ -10,6 +10,7 @@ public:
     explicit DataLoader(QObject *parent = nullptr);
     bool loadStl(QString &filePath);
     // bool loadCbct(QString &filePath);
+    vtkSmartPointer<vtkPolyData> getStlData();
 
 signals:
     void stlLoaded();
@@ -18,6 +19,5 @@ signals:
 private:
     vtkSmartPointer<vtkPolyData> m_stlData;
     // vtkNew<vtkPolyData> m_cbctData;
-    vtkSmartPointer<vtkSTLReader> m_stlReader;
-    // vtkNew<vtkSTLReader> m_stlReader;
+    vtkNew<vtkSTLReader> m_stlReader;
 };

@@ -14,3 +14,10 @@ bool DataLoader::loadStl(QString &filePath)
         return false;
     return true;
 }
+
+vtkSmartPointer<vtkPolyData> DataLoader::getStlData()
+{
+    QString filePath = "C:/Users/cdac/Official-projects/Input-files/SAIFI.stl";
+    loadStl(filePath);
+    return m_stlData;
+}

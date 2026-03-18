@@ -21,7 +21,10 @@ int main(int argc, char *argv[])
     } else {
         qWarning() << "Failed to load stylesheet!";
     }
-    MainWindow w;
+
+    std::shared_ptr<DataLoader> dl = std::make_shared<DataLoader>();
+    std::shared_ptr<RegisterViewModel> regVM = std::make_shared<RegisterViewModel>(dl);
+    MainWindow w(regVM);
     w.show();
     return a.exec();
 }

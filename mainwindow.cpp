@@ -12,6 +12,7 @@ MainWindow::MainWindow(std::shared_ptr<RegisterViewModel> rVM, QWidget *parent)
     setupData();
 
     connect(m_isoSlider, &QSlider::valueChanged, this, &MainWindow::onSliderChanged);
+    connect(m_autoRegisterBtn, &QPushButton::toggled, this, &MainWindow::onAutoRegisterClicked);
 }
 
 MainWindow::~MainWindow() {}
@@ -29,8 +30,8 @@ void MainWindow::setupUI()
     hLayout->addWidget(m_vtkWidget, 6);
     hLayout->addWidget(m_rightControlsWidget, 1);
 
-    QPushButton *autoRegisterBtn = new QPushButton("Auto Register", m_rightControlsWidget);
-    autoRegisterBtn->setCheckable(true);
+    m_autoRegisterBtn = new QPushButton("Auto Register", m_rightControlsWidget);
+    m_autoRegisterBtn->setCheckable(true);
 
     m_isoSlider = new QSlider(Qt::Horizontal, m_rightControlsWidget);
 
@@ -42,7 +43,7 @@ void MainWindow::setupUI()
 
     QVBoxLayout *vLayout = new QVBoxLayout(m_rightControlsWidget);
 
-    vLayout->addWidget(autoRegisterBtn);
+    vLayout->addWidget(m_autoRegisterBtn);
     vLayout->addWidget(m_isoSlider);
 
     m_vtkWidget->SetRenderWindow(m_renderWindow);
@@ -91,4 +92,16 @@ void MainWindow::onSliderChanged(int val)
     m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(val));
     m_renderWindow->Render();
     // m_rightRenderer->Render();
+}
+
+void MainWindow::onAutoRegisterClicked(bool checked)
+{
+    if (checked) {
+        m_leftRenderer->RemoveActor(m_stlActor);
+        m_rightRenderer->AddActor(m_stlActor);
+    } else {
+        m_rightRenderer->RemoveActor(m_stlActor);
+        m_leftRenderer->AddActor(m_stlActor);
+    }
+    m_renderWindow->Render();
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include <QMainWindow>
+#include <QPushButton>
 #include <QSlider>
 #include <QVTKOpenGLNativeWidget.h>
 #include "registerviewmodel.h"
@@ -23,12 +24,14 @@ public:
     void setupData();
 public slots:
     void onSliderChanged(int val);
+    void onAutoRegisterClicked(bool checked);
 
 private:
     QWidget *m_container = nullptr;
     QVTKOpenGLNativeWidget *m_vtkWidget = nullptr;
     QWidget *m_rightControlsWidget = nullptr;
     QSlider *m_isoSlider = nullptr;
+    QPushButton *m_autoRegisterBtn = nullptr;
 
     vtkNew<vtkGenericOpenGLRenderWindow> m_renderWindow;
     vtkNew<vtkRenderer> m_leftRenderer;

@@ -9,6 +9,8 @@ public:
     explicit RegisterViewModel(std::shared_ptr<DataLoader> dl, QObject *parent = nullptr);
 
     vtkSmartPointer<vtkPolyData> getStlData();
+    vtkSmartPointer<vtkImageData> getDicomData();
+    vtkSmartPointer<vtkVolumeProperty> getVolProps();
 signals:
     void dataLoaded();
 

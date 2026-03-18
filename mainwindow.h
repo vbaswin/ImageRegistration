@@ -7,6 +7,7 @@
 #include "vtkPolyDataMapper.h"
 #include "vtkRenderer.h"
 #include <memory>
+#include <vtkGPUVolumeRayCastMapper.h>
 
 class MainWindow : public QMainWindow
 {
@@ -27,9 +28,12 @@ private:
     vtkNew<vtkGenericOpenGLRenderWindow> m_renderWindow;
     vtkNew<vtkRenderer> m_leftRenderer;
     vtkNew<vtkRenderer> m_rightRenderer;
+
     vtkNew<vtkPolyDataMapper> m_stlMapper;
     vtkNew<vtkActor> m_stlActor;
-    // vtkNew<vtkRenderer> m_rightRenderer;
-    vtkSmartPointer<vtkPolyData> m_stlPolyData;
+
+    vtkNew<vtkGPUVolumeRayCastMapper> m_dicomMapper;
+    vtkNew<vtkVolume> m_dicomVolume;
+
     std::shared_ptr<RegisterViewModel> m_regVM;
 };

@@ -6,9 +6,9 @@ MainWindow::MainWindow(std::shared_ptr<RegisterViewModel> rVM, QWidget *parent)
     : QMainWindow(parent)
     , m_regVM(rVM)
 {
+    this->resize(1920, 1080);
     setupUI();
     setupData();
-    this->resize(1920, 1080);
 }
 
 MainWindow::~MainWindow() {}
@@ -46,14 +46,22 @@ void MainWindow::setupUI()
 
     m_leftRenderer->SetViewport(leftViewPort);
     m_rightRenderer->SetViewport(rightViewPort);
-
-    // m_renderWindow->Render();
 }
 
 void MainWindow::setupData()
 {
-    m_stlPolyData = m_regVM->getStlData();
-    m_stlMapper->SetInputData(m_stlPolyData);
+    // m_stlPolyData = m_regVM->getStlData();
+    m_stlMapper->SetInputData(m_regVM->getStlData());
     m_stlActor->SetMapper(m_stlMapper);
     m_leftRenderer->AddActor(m_stlActor);
+
+    m_dicomMapper->SetInputData(m_regVM->getDicomData());
+    m_dicomVolume->SetMapper(m_dicomMapper);
+    m_dicomVolume->SetProperty(m_regVM->getVolProps());
+    m_rightRenderer->AddVolume(m_dicomVolume);
+
+    m_leftRenderer->ResetCamera();
+    m_rightRenderer->ResetCamera();
+
+    m_renderWindow->Render();
 }

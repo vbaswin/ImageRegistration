@@ -9,3 +9,13 @@ vtkSmartPointer<vtkPolyData> RegisterViewModel::getStlData()
 {
     return m_dataLoader->getStlData();
 }
+
+vtkSmartPointer<vtkImageData> RegisterViewModel::getDicomData()
+{
+    return m_dataLoader->getDicomData();
+}
+
+vtkSmartPointer<vtkVolumeProperty> RegisterViewModel::getVolProps()
+{
+    return m_dataLoader->getVolProps();
+}

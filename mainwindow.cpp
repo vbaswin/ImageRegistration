@@ -99,9 +99,19 @@ void MainWindow::onAutoRegisterClicked(bool checked)
     if (checked) {
         m_leftRenderer->RemoveActor(m_stlActor);
         m_rightRenderer->AddActor(m_stlActor);
+
+        double currentIso = -999; // future : use the value from slider
+        vtkSmartPointer<vtkMatrix4x4> transformMatrix = m_regVM->performRegistration(currentIso);
+
+        m_stlActor->SetUserMatrix(transformMatrix);
+
     } else {
         m_rightRenderer->RemoveActor(m_stlActor);
         m_leftRenderer->AddActor(m_stlActor);
+
+        vtkNew<vtkMatrix4x4> identityMatrix;
+        identityMatrix->Identity();
+        m_stlActor->SetUserMatrix(identityMatrix); // undo registration
     }
     m_renderWindow->Render();
 }

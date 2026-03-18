@@ -14,12 +14,14 @@ SOURCES += \
     dataloader.cpp \
     main.cpp \
     mainwindow.cpp \
-    registerviewmodel.cpp
+    registerviewmodel.cpp \
+    registrationmodel.cpp
 
 HEADERS += \
     dataloader.h \
     mainwindow.h \
-    registerviewmodel.h
+    registerviewmodel.h \
+    registrationmodel.h
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

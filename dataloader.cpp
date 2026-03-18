@@ -1,7 +1,13 @@
 #include "dataloader.h"
 #include <QDebug>
+#include <QDir>
+#include <QFile>
 #include "vtkSmartPointer.h"
 #include <vtkStringArray.h>
+
+QString stlFilePath = "C:/Users/cdac/Official-projects/Input-files/SAIFI.stl";
+QString dicomFolderPath = "C:/Users/cdac/Official-projects/Input-files/Man_Mask";
+// QString dicomFolderPath = "C:/Users/cdac/Projects/SE2dcm";
 
 DataLoader::DataLoader(QObject *parent)
     : QObject{parent}
@@ -10,6 +16,7 @@ DataLoader::DataLoader(QObject *parent)
     m_colorTransferFunction = vtkSmartPointer<vtkColorTransferFunction>::New();
 
     m_prop = vtkSmartPointer<vtkVolumeProperty>::New();
+    m_isoProp = vtkSmartPointer<vtkProperty>::New();
 
     // 1. Turn on shading (Absolutely required for 3D depth)
     m_prop->ShadeOn();
@@ -26,6 +33,16 @@ DataLoader::DataLoader(QObject *parent)
     // 5. Specular Power (How sharp/pinpoint the shiny reflection is. Higher = glossier/more metallic)
     m_prop->SetSpecularPower(70.0);
     // m_prop->SetInterpolationTypeToNearest();
+
+    m_isoProp->SetOpacity(1.0);
+    m_isoProp->SetAmbient(0.1);
+    m_isoProp->SetDiffuse(0.8);
+    m_isoProp->SetSpecular(0.4);
+    m_isoProp->SetSpecularPower(50.0);
+
+    loadStl(stlFilePath);
+    loadDicom(dicomFolderPath);
+
     setupTransferFunctions();
 }
 struct TransferPoint
@@ -80,6 +97,9 @@ void DataLoader::setupTransferFunctions()
 
     m_prop->SetScalarOpacity(m_opacityPiecewiseFunction);
     m_prop->SetColor(m_colorTransferFunction);
+
+    // isoSurface properties
+    m_isoProp->SetColor(255.0 / 255.0, 255.0 / 255.0, 255.0 / 255.0);
 }
 bool DataLoader::loadStl(QString &filePath)
 {
@@ -93,15 +113,16 @@ bool DataLoader::loadStl(QString &filePath)
 
 bool DataLoader::loadDicom(QString &folderPath)
 {
+    /*
     m_dicomDir->SetDirectoryName(folderPath.toUtf8().constData());
     m_dicomDir->Update();
     if (m_dicomDir->GetNumberOfSeries() == 0) {
         qDebug() << "No dicom series found in the directory ";
         return false;
     } else {
-        qDebug() << "Series found!";
+        qDebug() << "Series found!, no: " << m_dicomDir->GetNumberOfSeries();
     }
-    vtkStringArray *fileNames = m_dicomDir->GetFileNamesForSeries(100);
+    vtkStringArray *fileNames = m_dicomDir->GetFileNamesForSeries(2);
 
     if (!fileNames || fileNames->GetNumberOfValues() == 0) {
         qWarning() << "Series 0 alloted but 0 files!";
@@ -111,6 +132,32 @@ bool DataLoader::loadDicom(QString &folderPath)
     }
 
     qDebug() << "first file path" << fileNames->GetValue(0).c_str();
+    
+*/
+
+    QDir dir(folderPath);
+    dir.setNameFilters(QStringList() << "*.dcm" << "*.ima");
+    dir.setFilter(QDir::Files | QDir::NoSymLinks);
+    dir.setSorting(QDir::Name);
+
+    QFileInfoList fileList = dir.entryInfoList();
+
+    // if no files have extensions, grab everything
+    if (fileList.isEmpty()) {
+        dir.setNameFilters(QStringList());
+        fileList = dir.entryInfoList();
+    }
+    if (fileList.isEmpty()) {
+        qWarning() << "No files found in dir";
+        return false;
+    }
+
+    qDebug() << "No of files: " << fileList.size();
+    vtkNew<vtkStringArray> fileNames;
+    for (const QFileInfo &fileInfo : fileList) {
+        fileNames->InsertNextValue(fileInfo.absoluteFilePath().toUtf8().constData());
+    }
+
     m_dicomReader->SetFileNames(fileNames);
     m_dicomReader->Update();
     m_dicomData = m_dicomReader->GetOutput();
@@ -126,23 +173,43 @@ bool DataLoader::loadDicom(QString &folderPath)
         qDebug() << "Empty points returned!";
         return false;
     }
+    // MANDATORY 3D Validation for vtkFlyingEdges3D
+    int dims[3];
+    m_dicomData->GetDimensions(dims);
+    qDebug() << "DICOM Grid Dimensions: X=" << dims[0] << " Y=" << dims[1] << " Z=" << dims[2];
+    if (dims[2] <= 1) {
+        qWarning()
+            << "CRITICAL: vtkFlyingEdges3D requires a 3D volume, but received 2D data (Z <= 1). "
+            << "Check if multiple DICOM slices exist in the folder.";
+        return false;
+    }
+
     return true;
 }
+
 vtkSmartPointer<vtkPolyData> DataLoader::getStlData()
 {
-    QString filePath = "C:/Users/cdac/Official-projects/Input-files/SAIFI.stl";
-    loadStl(filePath);
     return m_stlData;
 }
 vtkSmartPointer<vtkImageData> DataLoader::getDicomData()
 {
-    QString folderPath = "C:/Users/cdac/Official-projects/Input-files/Man_Mask";
-    // QString folderPath = "C:/Users/cdac/Projects/SE2dcm";
-    loadDicom(folderPath);
     return m_dicomData;
 }
 
 vtkSmartPointer<vtkVolumeProperty> DataLoader::getVolProps()
 {
     return m_prop;
+}
+
+vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
+{
+    m_isoAlgo->SetInputConnection(m_dicomReader->GetOutputPort());
+    m_isoAlgo->SetValue(0, contourValue);
+    m_isoAlgo->Update();
+    return m_isoAlgo->GetOutput();
+}
+
+vtkSmartPointer<vtkProperty> DataLoader::getSurfaceProps()
+{
+    return m_isoProp;
 }

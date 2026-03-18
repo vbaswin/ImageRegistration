@@ -15,7 +15,17 @@ vtkSmartPointer<vtkImageData> RegisterViewModel::getDicomData()
     return m_dataLoader->getDicomData();
 }
 
+vtkSmartPointer<vtkPolyData> RegisterViewModel::getSurfaceData(double contourValue)
+{
+    return m_dataLoader->getSurfaceData(contourValue);
+}
+
 vtkSmartPointer<vtkVolumeProperty> RegisterViewModel::getVolProps()
 {
     return m_dataLoader->getVolProps();
+}
+
+vtkSmartPointer<vtkProperty> RegisterViewModel::getSurfaceProps()
+{
+    return m_dataLoader->getSurfaceProps();
 }

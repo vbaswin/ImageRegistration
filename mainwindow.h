@@ -1,7 +1,9 @@
 #pragma once
 #include <QMainWindow>
+#include <QSlider>
 #include <QVTKOpenGLNativeWidget.h>
 #include "registerviewmodel.h"
+#include "vtkFlyingEdges3D.h"
 #include "vtkGenericOpenGLRenderWindow.h"
 #include "vtkImageData.h"
 #include "vtkPolyDataMapper.h"
@@ -19,11 +21,14 @@ public:
 
     void setupUI();
     void setupData();
+public slots:
+    void onSliderChanged(int val);
 
 private:
     QWidget *m_container = nullptr;
     QVTKOpenGLNativeWidget *m_vtkWidget = nullptr;
     QWidget *m_rightControlsWidget = nullptr;
+    QSlider *m_isoSlider = nullptr;
 
     vtkNew<vtkGenericOpenGLRenderWindow> m_renderWindow;
     vtkNew<vtkRenderer> m_leftRenderer;
@@ -34,6 +39,10 @@ private:
 
     vtkNew<vtkGPUVolumeRayCastMapper> m_dicomMapper;
     vtkNew<vtkVolume> m_dicomVolume;
+
+    // iso surface
+    vtkNew<vtkActor> m_dicomActor;
+    vtkNew<vtkPolyDataMapper> m_dicomSurfaceMapper;
 
     std::shared_ptr<RegisterViewModel> m_regVM;
 };

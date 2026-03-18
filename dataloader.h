@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include "vtkFlyingEdges3D.h"
 #include "vtkSTLReader.h"
 #include <vtkColorTransferFunction.h>
 #include <vtkDICOMDirectory.h>
@@ -7,6 +8,7 @@
 #include <vtkImageData.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkPolyData.h>
+#include <vtkProperty.h>
 #include <vtkVolumeProperty.h>
 
 class DataLoader : public QObject
@@ -22,6 +24,8 @@ public:
     vtkSmartPointer<vtkImageData> getDicomData();
     vtkSmartPointer<vtkVolumeProperty> getVolProps();
 
+    vtkSmartPointer<vtkPolyData> getSurfaceData(double contourValue);
+    vtkSmartPointer<vtkProperty> getSurfaceProps();
 signals:
     void stlLoaded();
     void cbctLoaded();
@@ -37,4 +41,8 @@ private:
     vtkSmartPointer<vtkPiecewiseFunction> m_opacityPiecewiseFunction;
     vtkSmartPointer<vtkColorTransferFunction> m_colorTransferFunction;
     vtkSmartPointer<vtkVolumeProperty> m_prop;
+
+    // isosurface extraction
+    vtkNew<vtkFlyingEdges3D> m_isoAlgo;
+    vtkSmartPointer<vtkProperty> m_isoProp;
 };

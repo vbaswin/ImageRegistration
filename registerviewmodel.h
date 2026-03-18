@@ -10,7 +10,9 @@ public:
 
     vtkSmartPointer<vtkPolyData> getStlData();
     vtkSmartPointer<vtkImageData> getDicomData();
+    vtkSmartPointer<vtkPolyData> getSurfaceData(double contourValue);
     vtkSmartPointer<vtkVolumeProperty> getVolProps();
+    vtkSmartPointer<vtkProperty> getSurfaceProps();
 signals:
     void dataLoaded();
 

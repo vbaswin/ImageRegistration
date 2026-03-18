@@ -214,7 +214,7 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
     m_isoFilter->SetNumberOfIterations(20);
 
     // A lower passband value (e.g., 0.001 to 0.1) creates more smoothing (lets lower frequency structures through).
-    m_isoFilter->SetPassBand(0.005);
+    m_isoFilter->SetPassBand(0.01);
 
     // Essential flags to prevent mesh distortion and calculation errors
     m_isoFilter->BoundarySmoothingOff();

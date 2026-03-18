@@ -1,6 +1,7 @@
 #pragma once
 #include <QDebug>
 #include <QObject>
+#include <pcl/features/fpfh_omp.h>
 #include <pcl/io/vtk_lib_io.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -23,6 +24,16 @@ private:
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float leafSize);
     pcl::PointCloud<pcl::PointNormal>::Ptr estimateNormals(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float searchRadius);
+
+    pcl::PointCloud<pcl::FPFHSignature33>::Ptr computeFPFH(
+        pcl::PointCloud<pcl::PointNormal>::Ptr cloudWithNormals, float featureRadius);
+
+    vtkSmartPointer<vtkMatrix4x4> performRANSAC(
+        pcl::PointCloud<pcl::PointNormal>::Ptr sourceNormals,
+        pcl::PointCloud<pcl::PointNormal>::Ptr targetNormals,
+        pcl::PointCloud<pcl::FPFHSignature33>::Ptr sourceFeatures,
+        pcl::PointCloud<pcl::FPFHSignature33>::Ptr targetFeatures,
+        float maxCorrespondenceDistance);
 
 signals:
 };

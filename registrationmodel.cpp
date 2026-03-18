@@ -53,6 +53,21 @@ pcl::PointCloud<pcl::PointNormal>::Ptr RegistrationModel::estimateNormals(
 
     return normalCloud;
 }
+pcl::PointCloud<pcl::FPFHSignature33>::Ptr RegistrationModel::computeFPFH(
+    pcl::PointCloud<pcl::PointNormal>::Ptr cloudWithNormals, float featureRadius)
+{
+    pcl::PointCloud<pcl::FPFHSignature33>::Ptr fpfhFeatures(
+        new pcl::PointCloud<pcl::FPFHSignature33>());
+
+    pcl::FPFHEstimationOMP < pcl::PointNormal, pclPointNomral,
+}
+vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performRANSAC(
+    pcl::PointCloud<pcl::PointNormal>::Ptr sourceNormals,
+    pcl::PointCloud<pcl::PointNormal>::Ptr targetNormals,
+    pcl::PointCloud<pcl::FPFHSignature33>::Ptr sourceFeatures,
+    pcl::PointCloud<pcl::FPFHSignature33>::Ptr targetFeatures,
+    float maxCorrespondenceDistance)
+{}
 
 vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     vtkSmartPointer<vtkPolyData> sourceStl, vtkSmartPointer<vtkPolyData> targetSurface)

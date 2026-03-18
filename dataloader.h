@@ -8,8 +8,10 @@
 #include <vtkImageData.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkPolyData.h>
+#include <vtkPolyDataNormals.h>
 #include <vtkProperty.h>
 #include <vtkVolumeProperty.h>
+#include <vtkWindowedSincPolyDataFilter.h>
 
 class DataLoader : public QObject
 {
@@ -45,4 +47,6 @@ private:
     // isosurface extraction
     vtkNew<vtkFlyingEdges3D> m_isoAlgo;
     vtkSmartPointer<vtkProperty> m_isoProp;
+    vtkNew<vtkWindowedSincPolyDataFilter> m_isoFilter;
+    vtkNew<vtkPolyDataNormals> m_normalsCalc;
 };

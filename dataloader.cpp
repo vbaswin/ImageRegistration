@@ -96,13 +96,21 @@ bool DataLoader::loadDicom(QString &folderPath)
     m_dicomDir->SetDirectoryName(folderPath.toUtf8().constData());
     m_dicomDir->Update();
     if (m_dicomDir->GetNumberOfSeries() == 0) {
-        std::cerr << "No dicom series found in the directory ";
+        qDebug() << "No dicom series found in the directory ";
         return false;
+    } else {
+        qDebug() << "Series found!";
     }
-    vtkStringArray *fileNames = m_dicomDir->GetFileNamesForSeries(0);
+    vtkStringArray *fileNames = m_dicomDir->GetFileNamesForSeries(100);
 
-    // if (!fileNames || )
+    if (!fileNames || fileNames->GetNumberOfValues() == 0) {
+        qWarning() << "Series 0 alloted but 0 files!";
+        return false;
+    } else {
+        qDebug() << "file names no: " << fileNames->GetNumberOfValues();
+    }
 
+    qDebug() << "first file path" << fileNames->GetValue(0).c_str();
     m_dicomReader->SetFileNames(fileNames);
     m_dicomReader->Update();
     m_dicomData = m_dicomReader->GetOutput();
@@ -114,8 +122,10 @@ bool DataLoader::loadDicom(QString &folderPath)
     // qDebug() << "File numbers: "
     // << fileNames->GetNumberOf
 
-    if (m_dicomData == nullptr || m_dicomData->GetNumberOfPoints() == 0)
+    if (m_dicomData == nullptr || m_dicomData->GetNumberOfPoints() == 0) {
+        qDebug() << "Empty points returned!";
         return false;
+    }
     return true;
 }
 vtkSmartPointer<vtkPolyData> DataLoader::getStlData()

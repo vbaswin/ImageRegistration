@@ -71,3 +71,20 @@ INCLUDEPATH += $$VTKDICOM_INSTALL/include
 QMAKE_LIBDIR += $$VTKDICOM_INSTALL/lib
 
 LIBS += -lvtkDICOM-8.2.0
+
+
+# PCL integration
+PCL_INSTALL = "c:/Program Files/PCL 1.12.1"
+
+INCLUDEPATH += "$$PCL_INSTALL/include/pcl-1.12"
+INCLUDEPATH += "$$PCL_INSTALL/3rdParty/Boost/include/boost-1_78"  # Check your exact boost version!
+INCLUDEPATH += "$$PCL_INSTALL/3rdParty/Eigen/eigen3"
+INCLUDEPATH += "$$PCL_INSTALL/3rdParty/FLANN/include"
+
+# 2. Linker Directories
+QMAKE_LIBDIR += "$$PCL_INSTALL/lib"
+QMAKE_LIBDIR += "$$PCL_INSTALL/3rdParty/Boost/lib"
+
+# 3. Core Libraries (Release mode)
+# If building in Debug, suffix these with 'd' (e.g., pcl_common_debug.lib or pcl_commond.lib)
+LIBS += -lpcl_common

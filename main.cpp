@@ -6,6 +6,9 @@
 #include <QSurfaceFormat>
 #include <QVTKOpenGLNativeWidget.h>
 
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+
 #include <vtkAutoInit.h>
 VTK_MODULE_INIT(vtkRenderingOpenGL2);
 VTK_MODULE_INIT(vtkInteractionStyle);
@@ -35,6 +38,12 @@ int main(int argc, char *argv[])
 
     std::shared_ptr<DataLoader> dl = std::make_shared<DataLoader>();
     std::shared_ptr<RegisterViewModel> regVM = std::make_shared<RegisterViewModel>(dl);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    cloud->push_back(pcl::PointXYZ(1.0f, 2.0f, 3.0f));
+
+    qDebug() << "Pcl cloud size: " << cloud->size();
+
     MainWindow w(regVM);
     w.show();
     return a.exec();

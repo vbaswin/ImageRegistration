@@ -86,7 +86,7 @@ QMAKE_LIBDIR += "$$PCL_INSTALL/lib"
 QMAKE_LIBDIR += "$$PCL_INSTALL/3rdParty/Boost/lib"
 QMAKE_LIBDIR += "$$PCL_INSTALL/3rdParty/FLANN/lib"
 
-LIBS += \
+LIBS +=     \
     -lpcl_common \
     -lpcl_kdtree \
     -lpcl_search \
@@ -95,3 +95,5 @@ LIBS += \
     -lpcl_registration \
     -lpcl_io \
     -lflann_cpp_s
+
+QMAKE_CXXFLAGS += /arch:AVX2

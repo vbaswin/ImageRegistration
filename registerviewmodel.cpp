@@ -36,6 +36,7 @@ vtkSmartPointer<vtkProperty> RegisterViewModel::getSurfaceProps()
 
 vtkSmartPointer<vtkMatrix4x4> RegisterViewModel::performRegistration(double isoValue)
 {
+    // qDebug() << "Inside p"
     vtkSmartPointer<vtkPolyData> sourceStl = getStlData();
     vtkSmartPointer<vtkPolyData> targetSurface = getSurfaceData(isoValue);
 

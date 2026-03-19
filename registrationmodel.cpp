@@ -1,7 +1,9 @@
 #include "registrationmodel.h"
 #include <pcl/common/io.h>
+#include <pcl/features/fpfh_omp.h>
 #include <pcl/features/normal_3d_omp.h> // omp uses multi-threading
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/registration/ia_ransac.h>
 #include <pcl/search/kdtree.h>
 
 RegistrationModel::RegistrationModel(QObject *parent)
@@ -59,21 +61,57 @@ pcl::PointCloud<pcl::FPFHSignature33>::Ptr RegistrationModel::computeFPFH(
     pcl::PointCloud<pcl::FPFHSignature33>::Ptr fpfhFeatures(
         new pcl::PointCloud<pcl::FPFHSignature33>());
 
-    pcl::FPFHEstimationOMP < pcl::PointNormal, pclPointNomral,
+    pcl::FPFHEstimationOMP<pcl::PointNormal, pcl::PointNormal, pcl::FPFHSignature33> fpfh;
+    pcl::search::KdTree<pcl::PointNormal>::Ptr kdTree(new pcl::search::KdTree<pcl::PointNormal>());
+
+    fpfh.setSearchMethod(kdTree);
+    fpfh.setInputCloud(cloudWithNormals);
+    fpfh.setInputNormals(cloudWithNormals);
+    fpfh.setRadiusSearch(featureRadius);
+    fpfh.compute(*fpfhFeatures);
+
+    return fpfhFeatures;
 }
+
 vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performRANSAC(
     pcl::PointCloud<pcl::PointNormal>::Ptr sourceNormals,
     pcl::PointCloud<pcl::PointNormal>::Ptr targetNormals,
     pcl::PointCloud<pcl::FPFHSignature33>::Ptr sourceFeatures,
     pcl::PointCloud<pcl::FPFHSignature33>::Ptr targetFeatures,
     float maxCorrespondenceDistance)
-{}
+{
+    pcl::SampleConsensusInitialAlignment<pcl::PointNormal, pcl::PointNormal, pcl::FPFHSignature33>
+        sac_ia;
+
+    sac_ia.setInputSource(sourceNormals);
+    sac_ia.setSourceFeatures(sourceFeatures);
+    sac_ia.setInputTarget(targetNormals);
+    sac_ia.setTargetFeatures(targetFeatures);
+    sac_ia.setMaximumIterations(2000);
+    sac_ia.setMaxCorrespondenceDistance(maxCorrespondenceDistance);
+
+    pcl::PointCloud<pcl::PointNormal> alignedSource;
+    sac_ia.align(alignedSource);
+
+    // extract transformation matrix
+    Eigen::Matrix4f initialTransform = sac_ia.getFinalTransformation();
+
+    // convert eigen strictly back to vtk
+    vtkSmartPointer<vtkMatrix4x4> vtkTrans = vtkSmartPointer<vtkMatrix4x4>::New();
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            vtkTrans->SetElement(i, j, initialTransform(i, j));
+        }
+    }
+
+    return vtkTrans;
+}
 
 vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     vtkSmartPointer<vtkPolyData> sourceStl, vtkSmartPointer<vtkPolyData> targetSurface)
 {
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclSource = convertVtkToPcl(sourceStl);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr pclTarget = convertVtkToPcl(sourceStl);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr pclTarget = convertVtkToPcl(targetSurface);
 
     vtkSmartPointer<vtkMatrix4x4> transform = vtkSmartPointer<vtkMatrix4x4>::New();
     transform->Identity();
@@ -94,5 +132,23 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     auto sourceNormals = estimateNormals(sourceDown, normalRadius);
     auto targetNormals = estimateNormals(targetDown, normalRadius);
 
-    return transform;
+    // fpfh feature extraction
+    float featureRadius = 10.0f;
+
+    qDebug() << "Extracting FPFH ...";
+    auto sourceFPFH = computeFPFH(sourceNormals, featureRadius);
+    auto targetFPFH = computeFPFH(targetNormals, featureRadius);
+
+    // ransac global alignment
+    qDebug() << "Executing RANSAC  ...";
+    float maxCorrespDist = 15.0f;
+    vtkSmartPointer<vtkMatrix4x4> ransacTransform = performRANSAC(sourceNormals,
+                                                                  targetNormals,
+                                                                  sourceFPFH,
+                                                                  targetFPFH,
+                                                                  maxCorrespDist);
+
+    qDebug() << "RANSAC  Execution complete!";
+
+    return ransacTransform;
 }

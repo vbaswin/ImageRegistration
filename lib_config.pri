@@ -30,7 +30,7 @@ QMAKE_CXXFLAGS_RELEASE_WITH_DEBUGINFO   += /Od
 QMAKE_LFLAGS_RELEASE                    += /DEBUG
 
 DEFINES	+= QT_DEPRECATED_WARNINGS
-VTK_INSTALL =C:/Users/cdac/Official-projects/ext_libs/VTK8.2/Release/
+VTK_INSTALL =C:/Users/HTG_SIBI_LAP2/Aswin/ext_libs/VTK8.2/Release
 
 INCLUDEPATH += $$VTK_INSTALL/include/vtk-8.2
 DEPENDPATH  += $$VTK_INSTALL/include/vtk-8.2
@@ -65,7 +65,7 @@ LIBS += \
 -ladvapi32
 
 # --- vtkDICOM 0.8.13 (MSVC 2019-compatible x64 build) ---
-VTKDICOM_INSTALL = C:/Users/cdac/Official-projects/ext_libs/VTKDicom-9.5.2/Release
+VTKDICOM_INSTALL = C:/Users/HTG_SIBI_LAP2/Aswin/ext_libs/VTKDicom-9.5.2/Release
 
 INCLUDEPATH += $$VTKDICOM_INSTALL/include
 QMAKE_LIBDIR += $$VTKDICOM_INSTALL/lib

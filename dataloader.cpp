@@ -5,9 +5,9 @@
 #include "vtkSmartPointer.h"
 #include <vtkStringArray.h>
 
-QString stlFilePath = "C:/Users/cdac/Official-projects/Input-files/SAIFI.stl";
+QString stlFilePath = "C:/Users/HTG_SIBI_LAP2/Aswin/Input-files/SAIFI.stl";
 
-QString dicomFolderPath = "C:/Users/cdac/Official-projects/Input-files/Man_Mask";
+QString dicomFolderPath = "C:/Users/HTG_SIBI_LAP2/Aswin/Input-files/Man_Mask";
 // QString dicomFolderPath = "C:/Users/cdac/Projects/SE2dcm";
 
 DataLoader::DataLoader(QObject *parent)

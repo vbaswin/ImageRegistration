@@ -1,6 +1,8 @@
 #include "dataloader.h"
 #include <vtkPolyDataConnectivityFilter.h>
+#include <vtkBox.h>
 #include <QDebug>
+#include <vtkClipPolyData.h>
 #include <QDir>
 #include <QFile>
 #include "vtkSmartPointer.h"
@@ -210,9 +212,27 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
     m_isoAlgo->Update();
 
 
-    vtkNew<vtkPolyDataConnectivityFilter> connectivityFilter;
-    connectivityFilter->SetInputConnection((m_isoAlgo->GetOutputPort()));
+    double volumeBounds[6] = {};
+    m_dicomReader->GetOutput()->GetBounds(volumeBounds);
 
+    double spacing[3];
+    m_dicomReader->GetOutput()->GetSpacing(spacing);
+    vtkNew<vtkBox> cropBox;
+    cropBox->SetBounds(bounds);
+
+    vtkNew<vtkClipPolyData> meshClipper;
+    meshClipper->SetInputConnection(m_isoAlgo->GetOutputPort());
+    meshClipper->SetClipFunction(cropBox);
+    meshClipper->InsideOutOn();
+
+
+
+    // vktNew<vtkPolyDataNormals> boundaryServer;
+    // boundaryServer->SetInputConnection(m_isoAlgo->Get)
+
+
+    vtkNew<vtkPolyDataConnectivityFilter> connectivityFilter;
+    connectivityFilter->SetInputConnection((meshClipper->GetOutputPort()));
     connectivityFilter->SetExtractionModeToLargestRegion();
 
 
@@ -245,6 +265,7 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
 
     m_normalsCalc->Update();
     return m_normalsCalc->GetOutput();
+    // return m_isoAlgo->GetOutput();
 }
 
 vtkSmartPointer<vtkProperty> DataLoader::getSurfaceProps()

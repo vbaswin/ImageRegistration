@@ -8,9 +8,9 @@
 #include "vtkSmartPointer.h"
 #include <vtkStringArray.h>
 
-QString stlFilePath = "C:/Users/HTG_SIBI_LAP2/Aswin/Input-files/SAIFI.stl";
+QString stlFilePath = "C:/Users/igrs/Desktop/Aswin/Input-files/SAIFI.stl";
 
-QString dicomFolderPath = "C:/Users/HTG_SIBI_LAP2/Aswin/Input-files/Man_Mask";
+QString dicomFolderPath = "C:/Users/igrs/Desktop/Aswin/Input-files/Man_Mask";
 // QString dicomFolderPath = "C:/Users/cdac/Projects/SE2dcm";
 
 DataLoader::DataLoader(QObject *parent)
@@ -212,18 +212,18 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
     m_isoAlgo->Update();
 
 
-    double volumeBounds[6] = {};
-    m_dicomReader->GetOutput()->GetBounds(volumeBounds);
+    // double volumeBounds[6] = {};
+    // m_dicomReader->GetOutput()->GetBounds(volumeBounds);
 
-    double spacing[3];
-    m_dicomReader->GetOutput()->GetSpacing(spacing);
-    vtkNew<vtkBox> cropBox;
-    cropBox->SetBounds(bounds);
+    // double spacing[3];
+    // m_dicomReader->GetOutput()->GetSpacing(spacing);
+    // vtkNew<vtkBox> cropBox;
+    // cropBox->SetBounds(volumeBounds);
 
-    vtkNew<vtkClipPolyData> meshClipper;
-    meshClipper->SetInputConnection(m_isoAlgo->GetOutputPort());
-    meshClipper->SetClipFunction(cropBox);
-    meshClipper->InsideOutOn();
+    // vtkNew<vtkClipPolyData> meshClipper;
+    // meshClipper->SetInputConnection(m_isoAlgo->GetOutputPort());
+    // meshClipper->SetClipFunction(cropBox);
+    // meshClipper->InsideOutOn();
 
 
 
@@ -232,7 +232,7 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
 
 
     vtkNew<vtkPolyDataConnectivityFilter> connectivityFilter;
-    connectivityFilter->SetInputConnection((meshClipper->GetOutputPort()));
+    connectivityFilter->SetInputConnection((m_isoAlgo->GetOutputPort()));
     connectivityFilter->SetExtractionModeToLargestRegion();
 
 

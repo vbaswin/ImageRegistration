@@ -1,4 +1,5 @@
 #include "dataloader.h"
+#include <vtkPolyDataConnectivityFilter.h>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
@@ -207,8 +208,16 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
     m_isoAlgo->SetInputConnection(m_dicomReader->GetOutputPort());
     m_isoAlgo->SetValue(0, contourValue);
     m_isoAlgo->Update();
+
+
+    vtkNew<vtkPolyDataConnectivityFilter> connectivityFilter;
+    connectivityFilter->SetInputConnection((m_isoAlgo->GetOutputPort()));
+
+    connectivityFilter->SetExtractionModeToLargestRegion();
+
+
     // m_isoAlgo->GetOutput();
-    m_isoFilter->SetInputConnection(m_isoAlgo->GetOutputPort());
+    m_isoFilter->SetInputConnection(connectivityFilter->GetOutputPort());
 
     // Higher iterations = more processing time but smoother results. 15-20 is a standard baseline.
     m_isoFilter->SetNumberOfIterations(20);

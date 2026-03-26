@@ -5,6 +5,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/registration/ia_ransac.h>
 #include <pcl/search/kdtree.h>
+#include <vtkPolyDataConnectivityFilter.h>
 
 RegistrationModel::RegistrationModel(QObject *parent)
     : QObject{parent}

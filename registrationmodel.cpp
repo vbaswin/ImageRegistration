@@ -1,5 +1,9 @@
 #include "registrationmodel.h"
 #include <pcl/common/io.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/filters/passthrough.h>
+
+#include <pcl/common/common.h>
 #include <pcl/features/fpfh_omp.h>
 #include <pcl/features/normal_3d_omp.h> // omp uses multi-threading
 #include <pcl/filters/voxel_grid.h>
@@ -123,7 +127,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         return transform;
     }
 
-    // preprocessing stage
+    // A. preprocessing stage
     float voxelLeafSize = 2.0f;
     float normalRadius = 4.0f;
 
@@ -133,14 +137,52 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     auto sourceNormals = estimateNormals(sourceDown, normalRadius);
     auto targetNormals = estimateNormals(targetDown, normalRadius);
 
-    // fpfh feature extraction
+    // B. orientation invariant filtering - curvature extraction
+
+    // helper lambda to extract curvature points
+    auto extractHighCurvature = [](pcl::PointCloud<pcl::PointNormal>::Ptr inputNormalCloud,
+                                   float curvatureThreshold) {
+        pcl::PointIndices::Ptr highCurvatureIndices(new pcl::PointIndices());
+        // Curvature value is directly computed by NormalEstimationOMP
+        // 0.0 = completely flat, > 0.05 = sharp edges/bumps
+        for (size_t i = 0; i < inputNormalCloud->points.size(); ++i) {
+            if (inputNormalCloud->points[i].curvature > curvatureThreshold) {
+                highCurvatureIndices->indices.push_back(i);
+            }
+        }
+
+        pcl::PointCloud<pcl::PointNormal>::Ptr featuredCloud(
+            new pcl::PointCloud<pcl::PointNormal>());
+
+        pcl::ExtractIndices<pcl::PointNormal> extract;
+        extract.setInputCloud(inputNormalCloud);
+        extract.setIndices(highCurvatureIndices);
+        extract.setNegative(false); // keep only high curvature points
+        extract.filter(*featuredCloud);
+
+        if (featuredCloud->points.size() < 100) {
+            qWarning() << "Curvature threshold too high. Returning original cloud";
+            return inputNormalCloud;
+        }
+        return featuredCloud;
+    };
+
+    // between .02 and 0.08, if too much bone increase
+    // if teeth disappear decrease it
+    float targetCurvatureThreshold = 0.03f;
+
+    // on both cbct and stl
+    auto featuredSource = extractHighCurvature(sourceNormals, targetCurvatureThreshold);
+    auto featuredTarget = extractHighCurvature(targetNormals, targetCurvatureThreshold);
+
+    // C. fpfh feature extraction
     float featureRadius = 10.0f;
 
     qDebug() << "Extracting FPFH ...";
-    auto sourceFPFH = computeFPFH(sourceNormals, featureRadius);
-    auto targetFPFH = computeFPFH(targetNormals, featureRadius);
+    auto sourceFPFH = computeFPFH(featuredSource, featureRadius);
+    auto targetFPFH = computeFPFH(featuredTarget, featureRadius);
 
-    // ransac global alignment
+    // D. ransac global alignment
     qDebug() << "Executing RANSAC  ...";
     float maxCorrespDist = 15.0f;
     vtkSmartPointer<vtkMatrix4x4> ransacTransform = performRANSAC(sourceNormals,

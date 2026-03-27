@@ -211,26 +211,6 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
     m_isoAlgo->SetValue(0, contourValue);
     m_isoAlgo->Update();
 
-
-    // double volumeBounds[6] = {};
-    // m_dicomReader->GetOutput()->GetBounds(volumeBounds);
-
-    // double spacing[3];
-    // m_dicomReader->GetOutput()->GetSpacing(spacing);
-    // vtkNew<vtkBox> cropBox;
-    // cropBox->SetBounds(volumeBounds);
-
-    // vtkNew<vtkClipPolyData> meshClipper;
-    // meshClipper->SetInputConnection(m_isoAlgo->GetOutputPort());
-    // meshClipper->SetClipFunction(cropBox);
-    // meshClipper->InsideOutOn();
-
-
-
-    // vktNew<vtkPolyDataNormals> boundaryServer;
-    // boundaryServer->SetInputConnection(m_isoAlgo->Get)
-
-
     vtkNew<vtkPolyDataConnectivityFilter> connectivityFilter;
     connectivityFilter->SetInputConnection((m_isoAlgo->GetOutputPort()));
     connectivityFilter->SetExtractionModeToLargestRegion();

@@ -40,10 +40,10 @@ int main(int argc, char *argv[])
     std::shared_ptr<RegistrationModel> regModel = std::make_shared<RegistrationModel>();
     std::shared_ptr<RegisterViewModel> regVM = std::make_shared<RegisterViewModel>(dl, regModel);
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-    cloud->push_back(pcl::PointXYZ(1.0f, 2.0f, 3.0f));
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    // cloud->push_back(pcl::PointXYZ(1.0f, 2.0f, 3.0f));
 
-    qDebug() << "Pcl cloud size: " << cloud->size();
+    // qDebug() << "Pcl cloud size: " << cloud->size();
 
     MainWindow w(regVM);
     w.show();

@@ -74,12 +74,14 @@ LIBS += -lvtkDICOM-8.2.0
 
 
 # PCL integration
-PCL_INSTALL = "c:/Program Files/PCL 1.12.1"
+PCL_INSTALL = "c:/Program Files/PCL 1.11.1"
 
-INCLUDEPATH += "$$PCL_INSTALL/include/pcl-1.12"
-INCLUDEPATH += "$$PCL_INSTALL/3rdParty/Boost/include/boost-1_78"  # Check your exact boost version!
+INCLUDEPATH += "$$PCL_INSTALL/include/pcl-1.11"
+INCLUDEPATH += "$$PCL_INSTALL/3rdParty/Boost/include/boost-1_74"  # Check your exact boost version!
 INCLUDEPATH += "$$PCL_INSTALL/3rdParty/Eigen/eigen3"
 INCLUDEPATH += "$$PCL_INSTALL/3rdParty/FLANN/include"
+INCLUDEPATH += "$$PCL_INSTALL/3rdParty/FLANN/include"
+
 
 # 2. Linker Directories
 QMAKE_LIBDIR += "$$PCL_INSTALL/lib"
@@ -96,4 +98,6 @@ LIBS +=     \
     -lpcl_io \
     -lflann_cpp_s
 
-QMAKE_CXXFLAGS += /arch:AVX2
+# ***** forces to use 32  bit alignment but pre-built pcl uses 16 bits
+# cauisng crashes
+# QMAKE_CXXFLAGS += /arch:AVX2

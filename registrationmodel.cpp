@@ -1,7 +1,9 @@
 #include "registrationmodel.h"
 #include <pcl/common/io.h>
 #include <pcl/filters/extract_indices.h>
+#include <pcl/filters/filter.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/io/ply_io.h>
 
 #include <pcl/common/common.h>
 #include <pcl/features/fpfh_omp.h>
@@ -57,6 +59,10 @@ pcl::PointCloud<pcl::PointNormal>::Ptr RegistrationModel::estimateNormals(
 
     //fpfh requires points and normals mapped together
     pcl::copyPointCloud(*inputCloud, *normalCloud);
+
+    std::vector<int> dummyIndices;
+    pcl::removeNaNFromPointCloud(*normalCloud, *normalCloud, dummyIndices);
+    pcl::removeNaNNormalsFromPointCloud(*normalCloud, *normalCloud, dummyIndices);
 
     return normalCloud;
 }
@@ -118,6 +124,11 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclSource = convertVtkToPcl(sourceStl);
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclTarget = convertVtkToPcl(targetSurface);
 
+    pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/initial_target.ply",
+                              *pclTarget);
+    pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/initial_source.ply",
+                              *pclSource);
+
     vtkSmartPointer<vtkMatrix4x4> transform = vtkSmartPointer<vtkMatrix4x4>::New();
     transform->Identity();
 
@@ -140,6 +151,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     // B. orientation invariant filtering - curvature extraction
 
     // helper lambda to extract curvature points
+    /*
     auto extractHighCurvature = [](pcl::PointCloud<pcl::PointNormal>::Ptr inputNormalCloud,
                                    float curvatureThreshold) {
         pcl::PointIndices::Ptr highCurvatureIndices(new pcl::PointIndices());
@@ -166,21 +178,25 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         }
         return featuredCloud;
     };
+    */
 
     // between .02 and 0.08, if too much bone increase
     // if teeth disappear decrease it
-    float targetCurvatureThreshold = 0.03f;
+    // float targetCurvatureThreshold = 0.1f;
 
     // on both cbct and stl
-    auto featuredSource = extractHighCurvature(sourceNormals, targetCurvatureThreshold);
-    auto featuredTarget = extractHighCurvature(targetNormals, targetCurvatureThreshold);
+    // auto featuredSource = extractHighCurvature(sourceNormals, targetCurvatureThreshold);
+    // auto featuredTarget = extractHighCurvature(targetNormals, targetCurvatureThreshold);
+
+    // pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/debug_dicom_teeth.ply",
+    //                           *featuredTarget);
 
     // C. fpfh feature extraction
     float featureRadius = 10.0f;
 
     qDebug() << "Extracting FPFH ...";
-    auto sourceFPFH = computeFPFH(featuredSource, featureRadius);
-    auto targetFPFH = computeFPFH(featuredTarget, featureRadius);
+    auto sourceFPFH = computeFPFH(sourceNormals, featureRadius);
+    auto targetFPFH = computeFPFH(targetNormals, featureRadius);
 
     // D. ransac global alignment
     qDebug() << "Executing RANSAC  ...";

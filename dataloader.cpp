@@ -217,25 +217,25 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
 
 
     // m_isoAlgo->GetOutput();
-    m_isoFilter->SetInputConnection(connectivityFilter->GetOutputPort());
+    // m_isoFilter->SetInputConnection(connectivityFilter->GetOutputPort());
 
-    // Higher iterations = more processing time but smoother results. 15-20 is a standard baseline.
-    m_isoFilter->SetNumberOfIterations(20);
+    // // Higher iterations = more processing time but smoother results. 15-20 is a standard baseline.
+    // m_isoFilter->SetNumberOfIterations(20);
 
-    // A lower passband value (e.g., 0.001 to 0.1) creates more smoothing (lets lower frequency structures through).
-    m_isoFilter->SetPassBand(0.01);
+    // // A lower passband value (e.g., 0.001 to 0.1) creates more smoothing (lets lower frequency structures through).
+    // m_isoFilter->SetPassBand(0.01);
 
-    // Essential flags to prevent mesh distortion and calculation errors
-    m_isoFilter->BoundarySmoothingOff();
-    m_isoFilter->FeatureEdgeSmoothingOff();
-    m_isoFilter->NonManifoldSmoothingOn();
-    m_isoFilter->NormalizeCoordinatesOn();
+    // // Essential flags to prevent mesh distortion and calculation errors
+    // m_isoFilter->BoundarySmoothingOff();
+    // m_isoFilter->FeatureEdgeSmoothingOff();
+    // m_isoFilter->NonManifoldSmoothingOn();
+    // m_isoFilter->NormalizeCoordinatesOn();
 
     // Update the pipeline from the smoother, not the isoAlgo
     // m_isoFilter->Update();
     // return m_isoFilter->GetOutput();
 
-    m_normalsCalc->SetInputConnection(m_isoFilter->GetOutputPort());
+    m_normalsCalc->SetInputConnection(m_isoAlgo->GetOutputPort());
     m_normalsCalc->SetFeatureAngle(
         60.0); // Smooths angles below 60 degrees, preserves sharp structural edges above
     m_normalsCalc->ComputePointNormalsOn();

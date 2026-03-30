@@ -17,10 +17,10 @@ public:
 
     vtkSmartPointer<vtkMatrix4x4> computeTransform(vtkSmartPointer<vtkPolyData> sourceStl,
                                                    vtkSmartPointer<vtkPolyData> targetSurface);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr extractTeethRegion(
-        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
 
 private:
+    pcl::PointCloud<pcl::PointXYZ>::Ptr extractTeethRegion(
+        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
     pcl::PointCloud<pcl::PointXYZ>::Ptr convertVtkToPcl(vtkSmartPointer<vtkPolyData> polyData);
     pcl::PointCloud<pcl::PointXYZ>::Ptr downsampleCloud(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float leafSize);

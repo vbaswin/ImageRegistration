@@ -36,3 +36,6 @@ DISTFILES += \
 
 
 CONFIG += c++17
+# Disable strict C++ compliance to allow PCL 1.11.1 legacy template configurations to compile
+win32: QMAKE_CXXFLAGS += /permissive
+

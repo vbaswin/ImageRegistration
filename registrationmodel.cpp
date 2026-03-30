@@ -1,5 +1,13 @@
+// #ifdef _MSC_VER
+// #include <immintrin.h>
+// #include <intrin.h>
+// #endif
+
 #include "registrationmodel.h"
+#include <algorithm>
 #include <pcl/common/io.h>
+#include <pcl/common/pca.h>
+#include <pcl/common/transforms.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/passthrough.h>
@@ -117,6 +125,92 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performRANSAC(
 
     return vtkTrans;
 }
+pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud)
+{
+    if (!inputCloud || inputCloud->empty()) {
+        qWarning() << "Input cloud empty";
+        return inputCloud;
+    }
+
+    pcl::PCA<pcl::PointXYZ> pca;
+    pca.setInputCloud(inputCloud);
+
+    Eigen::Matrix3f eigen_vectors = pca.getEigenVectors();
+    Eigen::Vector4f centroid = pca.getMean();
+
+    Eigen::Matrix4f transform(Eigen::Matrix4f::Identity());
+    transform.block<3, 3>(0, 0) = eigen_vectors.transpose();
+
+    transform.block<3, 1>(0, 3) = -1.0f * (eigen_vectors.transpose() * centroid.head<3>());
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr pcaAlignedCloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::transformPointCloud(*inputCloud, *pcaAlignedCloud, transform);
+
+    // 1D z axis point density histogram
+    pcl::PointXYZ min_pt, max_pt;
+    pcl::getMinMax3D(*pcaAlignedCloud, min_pt, max_pt);
+
+    float z_range = max_pt.z - min_pt.z;
+
+    if (z_range <= 0.0f || std::isnan(z_range)) {
+        qWarning() << "CRITICAL ERROR: Z-range is invalid:" << z_range
+                   << ". Returning original cloud.";
+        return inputCloud;
+    }
+
+    int num_bins = 60; // granularity of the slice
+    float bin_size = z_range / static_cast<float>(num_bins);
+    std::vector<int> histogram(num_bins, 0);
+
+    // populate histogram
+    for (const auto &point : pcaAlignedCloud->points) {
+        if (std::isnan(point.z))
+            continue;
+        int bin_idx = std::max(0,
+                               std::min(num_bins - 1,
+                                        static_cast<int>((point.z - min_pt.z) / bin_size)));
+        histogram[bin_idx]++;
+    }
+
+    auto peak_iter = std::max_element(histogram.begin(), histogram.end());
+    int peak_idx = static_cast<int>(std::distance(histogram.begin(), peak_iter));
+
+    float peak_z_center = min_pt.z + (peak_idx * bin_size) + (bin_size / 2.0f);
+    // float extraction_thickness = 18.0f;
+
+    float dynamic_thickness = z_range * 0.25f;
+    float min_limit = peak_z_center - (dynamic_thickness / 2.0f);
+    float max_limit = peak_z_center + (dynamic_thickness / 2.0f);
+
+    // Output Telemetry to trace coordinate scales
+    qDebug() << "=== Slicing Diagnostics ===";
+    qDebug() << "Total Z Range:" << z_range << "from" << min_pt.z << "to" << max_pt.z;
+    qDebug() << "Peak Bin Index:" << peak_idx << "with density" << *peak_iter << "points";
+    qDebug() << "Dynamic PassThrough Limits:" << min_limit << "to" << max_limit;
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr slicedPcaCloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PassThrough<pcl::PointXYZ> pass;
+    pass.setInputCloud(pcaAlignedCloud);
+    pass.setFilterFieldName("z");
+    // pass.setFilterLimits(peak_z_center = (extraction_thickness / 2.0f),
+    //                      peak_z_center + (extraction_thickness / 2.0f));
+    pass.setFilterLimits(min_limit, max_limit);
+    pass.filter(*slicedPcaCloud);
+
+    if (slicedPcaCloud->points.empty()) {
+        qWarning() << "Filter obliterated all points. Sclae error? Returning original cloud.";
+        return inputCloud;
+    }
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr finalWorldCloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::transformPointCloud(*slicedPcaCloud, *finalWorldCloud, transform.inverse());
+
+    qDebug() << "Extracted teeth region. Point count reduced from: " << inputCloud->points.size()
+             << " to " << finalWorldCloud->points.size();
+
+    return finalWorldCloud;
+}
 
 vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     vtkSmartPointer<vtkPolyData> sourceStl, vtkSmartPointer<vtkPolyData> targetSurface)
@@ -138,6 +232,10 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         return transform;
     }
 
+    auto croppedTarget = extractTeethRegion(pclTarget);
+    pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/cropped_target.ply",
+                              *croppedTarget);
+
     // A. preprocessing stage
     float voxelLeafSize = 2.0f;
     float normalRadius = 4.0f;
@@ -147,6 +245,8 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
 
     auto sourceNormals = estimateNormals(sourceDown, normalRadius);
     auto targetNormals = estimateNormals(targetDown, normalRadius);
+    // auto sourceNormals = estimateNormals(pclSource, normalRadius);
+    // auto targetNormals = estimateNormals(pclTarget, normalRadius);
 
     // B. orientation invariant filtering - curvature extraction
 

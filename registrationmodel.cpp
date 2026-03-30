@@ -7,6 +7,7 @@
 #include <pcl/common/io.h>
 #include <pcl/common/pca.h>
 #include <pcl/common/transforms.h>
+#include <pcl/filters/crop_box.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/impl/extract_indices.hpp>
@@ -137,6 +138,7 @@ struct GridHash
     }
 };
 
+/*
 pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud)
 {
@@ -238,6 +240,106 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     qDebug() << "Total Z-Buffer rays mapped correctly across top surface:" << zBuffer.size();
     qDebug() << "Ray Cast Obliterated internal bone, points radically reduced from:"
              << inputCloud->points.size() << "to" << finalWorldCloud->points.size();
+
+    return finalWorldCloud;
+}
+*/
+
+pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud)
+{
+    if (!inputCloud || inputCloud->empty()) {
+        qWarning() << "Input cloud is empty. Cannot execute CropBox extraction.";
+        return inputCloud;
+    }
+
+    // 1. Establish Canonical Orientation via PCA longest-axes
+    pcl::PCA<pcl::PointXYZ> pca;
+    pca.setInputCloud(inputCloud);
+
+    Eigen::Matrix3f eigenVectors = pca.getEigenVectors();
+    Eigen::Vector4f centroid = pca.getMean();
+    // Enforce strict right-handed coordinates
+    eigenVectors.col(2) = eigenVectors.col(0).cross(eigenVectors.col(1));
+
+    Eigen::Matrix4f transformToCanonical = Eigen::Matrix4f::Identity();
+    transformToCanonical.block<3, 3>(0, 0) = eigenVectors.transpose();
+    transformToCanonical.block<3, 1>(0, 3) = -1.0f
+                                             * (eigenVectors.transpose() * centroid.head<3>());
+
+    // Transform into perfectly aligned 'Bounding Box' Space
+    pcl::PointCloud<pcl::PointXYZ>::Ptr alignedCloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::transformPointCloud(*inputCloud, *alignedCloud, transformToCanonical);
+
+    // 2. Measure the Anatomical Dimensions of the Jaw
+    pcl::PointXYZ minPt, maxPt;
+    pcl::getMinMax3D(*alignedCloud, minPt, maxPt);
+
+    float rangeX = maxPt.x - minPt.x; // Width of Jaw
+    float rangeY = maxPt.y - minPt.y; // Depth of Jaw
+    float rangeZ = maxPt.z - minPt.z; // Height of Jaw
+
+    // 3. Density Heuristic (Determine if Crowns are facing +Z or -Z)
+    float checkDepth = 5.0f;
+    pcl::PassThrough<pcl::PointXYZ> passCheck;
+    passCheck.setInputCloud(alignedCloud);
+    passCheck.setFilterFieldName("z");
+
+    pcl::PointCloud<pcl::PointXYZ> bottomSlice, topSlice;
+    passCheck.setFilterLimits(minPt.z, minPt.z + checkDepth);
+    passCheck.filter(bottomSlice);
+    passCheck.setFilterLimits(maxPt.z - checkDepth, maxPt.z);
+    passCheck.filter(topSlice);
+
+    bool crownIsAtMaxZ = (topSlice.points.size() < bottomSlice.points.size());
+
+    // ==========================================================
+    // 4. PROPORTIONAL BOUNDING BOX CLIPPING
+    // Set your anatomical clipping percentages here
+    // ==========================================================
+    float clipBasePercent = 0.40f;  // Amputate the bottom 40% (Thick jaw base)
+    float clipRamusPercent = 0.15f; // Amputate the outer 15% edges (Skull joints / Ramus)
+    float clipRearPercent = 0.10f;  // Clean up 10% of the rear depth scatters
+
+    float newMinZ, newMaxZ;
+    if (crownIsAtMaxZ) {
+        newMinZ = minPt.z + (rangeZ * clipBasePercent); // Cut bottom up
+        newMaxZ = maxPt.z;
+    } else {
+        newMinZ = minPt.z;
+        newMaxZ = maxPt.z - (rangeZ * clipBasePercent); // Cut top down
+    }
+
+    // Clip the extremes of the length and width (Where the ramus/skull joints strictly exist)
+    float newMinX = minPt.x + (rangeX * clipRamusPercent);
+    float newMaxX = maxPt.x - (rangeX * clipRamusPercent);
+
+    float newMinY = minPt.y + (rangeY * clipRearPercent);
+    float newMaxY = maxPt.y - (rangeY * clipRearPercent);
+
+    // ==========================================================
+    // 5. EXECUTE 3D CROPBOX
+    // ==========================================================
+    pcl::CropBox<pcl::PointXYZ> cropBox;
+    cropBox.setInputCloud(alignedCloud);
+
+    // Set absolute 3D Cartesian limits
+    cropBox.setMin(Eigen::Vector4f(newMinX, newMinY, newMinZ, 1.0f));
+    cropBox.setMax(Eigen::Vector4f(newMaxX, newMaxY, newMaxZ, 1.0f));
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr surgicallyBoundedCloud(new pcl::PointCloud<pcl::PointXYZ>());
+    cropBox.filter(*surgicallyBoundedCloud);
+
+    // 6. Return the isolated teeth back to normal World Coordinates
+    pcl::PointCloud<pcl::PointXYZ>::Ptr finalWorldCloud(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::transformPointCloud(*surgicallyBoundedCloud,
+                             *finalWorldCloud,
+                             transformToCanonical.inverse());
+
+    qDebug() << "=== Proportional Bounding Box Crop Executed ===";
+    qDebug() << "Amputated skull joints (X limits) and structural base (Z limits).";
+    qDebug() << "Point count reduced down from:" << inputCloud->points.size() << "to"
+             << finalWorldCloud->points.size();
 
     return finalWorldCloud;
 }

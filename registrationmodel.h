@@ -20,7 +20,7 @@ public:
 
 private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr extractTeethRegion(
-        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool);
     pcl::PointCloud<pcl::PointXYZ>::Ptr convertVtkToPcl(vtkSmartPointer<vtkPolyData> polyData);
     pcl::PointCloud<pcl::PointXYZ>::Ptr downsampleCloud(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float leafSize);
@@ -36,6 +36,12 @@ private:
         pcl::PointCloud<pcl::FPFHSignature33>::Ptr sourceFeatures,
         pcl::PointCloud<pcl::FPFHSignature33>::Ptr targetFeatures,
         float maxCorrespondenceDistance);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr removeDisconnectedArtifacts(
+        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
+    vtkSmartPointer<vtkMatrix4x4> performICP(pcl::PointCloud<pcl::PointXYZ>::Ptr sourceCloud,
+                                             pcl::PointCloud<pcl::PointXYZ>::Ptr targetCloud,
+                                             vtkSmartPointer<vtkMatrix4x4> ransacTransform);
 
 signals:
 };

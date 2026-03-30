@@ -98,6 +98,11 @@ LIBS +=     \
     -lpcl_io \
     -lflann_cpp_s
 
+LIBS += -lpcl_common \
+                -lpcl_search \
+                -lpcl_kdtree \
+                -lpcl_segmentation
+
 # ***** forces to use 32  bit alignment but pre-built pcl uses 16 bits
 # cauisng crashes
 # QMAKE_CXXFLAGS += /arch:AVX2

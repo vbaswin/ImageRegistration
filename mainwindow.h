@@ -48,4 +48,5 @@ private:
     vtkNew<vtkPolyDataMapper> m_dicomSurfaceMapper;
 
     std::shared_ptr<RegisterViewModel> m_regVM;
+    double m_currentIso = 0;
 };

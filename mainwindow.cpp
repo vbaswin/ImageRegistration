@@ -62,6 +62,8 @@ void MainWindow::setupUI()
 
     m_leftRenderer->SetViewport(leftViewPort);
     m_rightRenderer->SetViewport(rightViewPort);
+
+    m_currentIso = 1;
 }
 
 void MainWindow::setupData()
@@ -78,7 +80,7 @@ void MainWindow::setupData()
     m_rightRenderer->AddVolume(m_dicomVolume);
 */
     // m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(-999));
-    m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(-999));
+    m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(m_currentIso));
     m_dicomActor->SetMapper(m_dicomSurfaceMapper);
     m_dicomActor->SetProperty(m_regVM->getSurfaceProps());
     m_rightRenderer->AddActor(m_dicomActor);
@@ -92,6 +94,7 @@ void MainWindow::setupData()
 void MainWindow::onSliderChanged(int val)
 {
     m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(val));
+    qDebug() << val;
     m_renderWindow->Render();
     // m_rightRenderer->Render();
 }
@@ -102,11 +105,14 @@ void MainWindow::onAutoRegisterClicked(bool checked)
         m_leftRenderer->RemoveActor(m_stlActor);
         m_rightRenderer->AddActor(m_stlActor);
 
-        double currentIso = -999; // future : use the value from slider
+        // m_currentIso = -999
+        // m_dicomSurfaceMapper->SetInputData(
+        //     m_regVM->getSurfaceData(m_currentIso));
 
         QElapsedTimer timer;
         timer.start();
-        vtkSmartPointer<vtkMatrix4x4> transformMatrix = m_regVM->performRegistration(currentIso);
+        vtkSmartPointer<vtkMatrix4x4> transformMatrix =
+            m_regVM->performRegistration(m_currentIso);
 
         // --- STOP PROFILING ---
         qDebug() << "Execution Time:" << timer.elapsed() / 1000.0 << "s.";

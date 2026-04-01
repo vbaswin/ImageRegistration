@@ -8,9 +8,23 @@
 #include "vtkSmartPointer.h"
 #include <vtkStringArray.h>
 
-QString stlFilePath = "C:/Users/igrs/Desktop/Aswin/Input-files/SAIFI.stl";
+// QString testPatientStl = "SAIFI";
+// QString testPatientCbct = "SAIFI";
 
-QString dicomFolderPath = "C:/Users/igrs/Desktop/Aswin/Input-files/Man_Mask";
+// QString testPatientStl = "vijaya upper jaw";
+// QString testPatientCbct = "vijaya";
+
+QString testPatientStl = "rajeev LowerJaw";
+QString testPatientCbct = "Rajeev 1 op";
+
+// QString testPatientStl = "unknown";
+// QString testPatientCbct = "unknown";
+
+QString stlFilePath =
+    "C:/Users/igrs/Desktop/Aswin/new_input_files/" + testPatientStl + ".stl";
+QString dicomFolderPath = "C:/Users/igrs/Desktop/Aswin/new_input_files/" +
+                          testPatientCbct + "/Man_Mask";
+
 // QString dicomFolderPath = "C:/Users/cdac/Projects/SE2dcm";
 
 DataLoader::DataLoader(QObject *parent)

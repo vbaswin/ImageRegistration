@@ -1,4 +1,6 @@
 #include "mainwindow.h"
+
+#include <QElapsedTimer>
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QSlider>
@@ -101,7 +103,13 @@ void MainWindow::onAutoRegisterClicked(bool checked)
         m_rightRenderer->AddActor(m_stlActor);
 
         double currentIso = -999; // future : use the value from slider
+
+        QElapsedTimer timer;
+        timer.start();
         vtkSmartPointer<vtkMatrix4x4> transformMatrix = m_regVM->performRegistration(currentIso);
+
+        // --- STOP PROFILING ---
+        qDebug() << "Execution Time:" << timer.elapsed() / 1000.0 << "s.";
 
         m_stlActor->SetUserMatrix(transformMatrix);
 

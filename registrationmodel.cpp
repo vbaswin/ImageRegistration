@@ -3,27 +3,27 @@
 // #include <utility>
 
 #include "registrationmodel.h"
-#include <algorithm>
+
+#include <pcl/common/common.h>
 #include <pcl/common/io.h>
 #include <pcl/common/pca.h>
 #include <pcl/common/transforms.h>
+#include <pcl/features/fpfh_omp.h>
+#include <pcl/features/normal_3d_omp.h>  // omp uses multi-threading
 #include <pcl/filters/crop_box.h>
 #include <pcl/filters/extract_indices.h>
-#include <pcl/registration/icp.h>
-#include <pcl/segmentation/extract_clusters.h>
-
 #include <pcl/filters/filter.h>
-#include <pcl/filters/impl/extract_indices.hpp>
 #include <pcl/filters/passthrough.h>
-#include <pcl/io/ply_io.h>
-
-#include <pcl/common/common.h>
-#include <pcl/features/fpfh_omp.h>
-#include <pcl/features/normal_3d_omp.h> // omp uses multi-threading
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/io/ply_io.h>
 #include <pcl/registration/ia_ransac.h>
+#include <pcl/registration/icp.h>
 #include <pcl/search/kdtree.h>
+#include <pcl/segmentation/extract_clusters.h>
 #include <vtkPolyDataConnectivityFilter.h>
+
+#include <algorithm>
+#include <pcl/filters/impl/extract_indices.hpp>
 
 RegistrationModel::RegistrationModel(QObject *parent)
     : QObject{parent}
@@ -44,9 +44,9 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::convertVtkToPcl(
 }
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::downsampleCloud(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float leafSize)
-{
-    pcl::PointCloud<pcl::PointXYZ>::Ptr downsampled(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float leafSize) {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr downsampled(
+        new pcl::PointCloud<pcl::PointXYZ>());
     pcl::VoxelGrid<pcl::PointXYZ> voxGrid;
 
     voxGrid.setLeafSize(leafSize, leafSize, leafSize);
@@ -284,11 +284,10 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::removeDisconnectedArtifac
 // ==========================================================
 // UTILITY: Final ICP Alignment
 // ==========================================================
-vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICP(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr sourceCloud,
-    pcl::PointCloud<pcl::PointXYZ>::Ptr targetCloud,
-    vtkSmartPointer<vtkMatrix4x4> ransacTransform)
-{
+vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
+    pcl::PointCloud<pcl::PointNormal>::Ptr sourceNormals,
+    pcl::PointCloud<pcl::PointNormal>::Ptr targetNormals,
+    vtkSmartPointer<vtkMatrix4x4> ransacTransform) {
     // 1. Convert RANSAC VTK Transformation to Eigen Matrix
     Eigen::Matrix4f eigenInitial = Eigen::Matrix4f::Identity();
     for (int i = 0; i < 4; ++i) {
@@ -298,20 +297,22 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICP(
     }
 
     // 2. Pre-align the Source cloud using the rough RANSAC result
-    pcl::PointCloud<pcl::PointXYZ>::Ptr alignedSource(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::transformPointCloud(*sourceCloud, *alignedSource, eigenInitial);
+    pcl::PointCloud<pcl::PointNormal>::Ptr alignedSource(
+        new pcl::PointCloud<pcl::PointNormal>());
+    pcl::transformPointCloudWithNormals(*sourceNormals, *alignedSource,
+                                        eigenInitial);
 
     // 3. Execute micro-locking Iterative Closest Point (ICP)
-    pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+    pcl::IterativeClosestPoint<pcl::PointNormal, pcl::PointNormal> icp;
     icp.setInputSource(alignedSource);
-    icp.setInputTarget(targetCloud);
+    icp.setInputTarget(targetNormals);
 
     // Strict constraints to prevent ICP from sliding the jaw out of position
     icp.setMaxCorrespondenceDistance(3.0f); // Max magnet grab distance
     icp.setMaximumIterations(50);
     icp.setTransformationEpsilon(1e-8);
 
-    pcl::PointCloud<pcl::PointXYZ> finalOutput;
+    pcl::PointCloud<pcl::PointNormal> finalOutput;
     icp.align(finalOutput);
 
     // 4. Matrix Multiplication: Combine the internal ICP shift with the global RANSAC move
@@ -379,7 +380,12 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     passCheck.setFilterLimits(maxPt.z - checkDepth, maxPt.z);
     passCheck.filter(topSlice);
 
-    bool crownIsAtMaxZ = (topSlice.points.size() < bottomSlice.points.size());
+    bool crownIsAtMaxZ;
+    if (isFullJaw) {
+        crownIsAtMaxZ = (topSlice.points.size() < bottomSlice.points.size());
+    } else {
+        crownIsAtMaxZ = (topSlice.points.size() > bottomSlice.points.size());
+    }
 
     // ==========================================================
     // 4. PROPORTIONAL BOUNDING BOX CLIPPING
@@ -389,7 +395,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     // float clipRamusPercent = 0.15f; // Amputate the outer 15% edges (Skull joints / Ramus)
     // float clipRearPercent = 0.10f;  // Clean up 10% of the rear depth scatters
 
-    float clipBasePercent = isFullJaw ? 0.40f : 0.20f;
+    float clipBasePercent = isFullJaw ? 0.40f : 0.35f;
     float clipRamusPercent = isFullJaw ? 0.15f : 0.00f; // DO NOT chop STL X-axis (Saves molars)
     float clipRearPercent = isFullJaw ? 0.10f : 0.00f;  // DO NOT chop
 
@@ -524,8 +530,15 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     float voxelLeafSize = 1.0f;
     float normalRadius = 2.0f;
 
-    auto sourceDown = downsampleCloud(pclSource, voxelLeafSize);
+    auto sourceDown = downsampleCloud(croppedSource, voxelLeafSize);
     auto targetDown = downsampleCloud(croppedTarget, voxelLeafSize);
+
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageRegistration/down_source.ply",
+        *sourceDown);
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageRegistration/down_target.ply",
+        *targetDown);
 
     auto sourceNormals = estimateNormals(sourceDown, normalRadius);
     auto targetNormals = estimateNormals(targetDown, normalRadius);
@@ -546,10 +559,18 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
                                                                   sourceFPFH,
                                                                   targetFPFH,
                                                                   maxCorrespDist);
-    qDebug() << "Initiating ICP Micro-Refinement...";
+
+    qDebug() << "Generating high-fidelity point to plane normal map...";
+    float highFidelityNormalRadius = 1.0f;
+    auto fineSourceNormals =
+        estimateNormals(croppedSource, highFidelityNormalRadius);
+    auto fineTargetNormals =
+        estimateNormals(croppedTarget, highFidelityNormalRadius);
+
+    qDebug() << "Initiating strict point-to-plane ICP Micro-Refinement...";
     // Pass the purely decimated downsampled clouds into ICP for final anatomical locking
-    vtkSmartPointer<vtkMatrix4x4> absoluteLockedTransform = performICP(sourceDown,
-                                                                       targetDown,
-                                                                       ransacTransform);
+    vtkSmartPointer<vtkMatrix4x4> absoluteLockedTransform =
+        performICPWithNormals(fineSourceNormals, fineTargetNormals,
+                              ransacTransform);
     return absoluteLockedTransform;
 }

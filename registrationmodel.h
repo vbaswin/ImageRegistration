@@ -1,6 +1,4 @@
 #pragma once
-#include <QDebug>
-#include <QObject>
 #include <pcl/features/fpfh_omp.h>
 #include <pcl/io/vtk_lib_io.h>
 #include <pcl/point_cloud.h>
@@ -9,16 +7,19 @@
 #include <vtkPolyData.h>
 #include <vtkSmartPointer.h>
 
-class RegistrationModel : public QObject
-{
+#include <QDebug>
+#include <QObject>
+
+class RegistrationModel : public QObject {
     Q_OBJECT
 public:
     explicit RegistrationModel(QObject *parent = nullptr);
 
-    vtkSmartPointer<vtkMatrix4x4> computeTransform(vtkSmartPointer<vtkPolyData> sourceStl,
-                                                   vtkSmartPointer<vtkPolyData> targetSurface);
+    vtkSmartPointer<vtkMatrix4x4> computeTransform(
+        vtkSmartPointer<vtkPolyData> sourceStl,
+        vtkSmartPointer<vtkPolyData> targetSurface);
 
-private:
+   private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr extractTeethRegion(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool);
     pcl::PointCloud<pcl::PointXYZ>::Ptr convertVtkToPcl(vtkSmartPointer<vtkPolyData> polyData);
@@ -39,9 +40,10 @@ private:
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr removeDisconnectedArtifacts(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
-    vtkSmartPointer<vtkMatrix4x4> performICP(pcl::PointCloud<pcl::PointXYZ>::Ptr sourceCloud,
-                                             pcl::PointCloud<pcl::PointXYZ>::Ptr targetCloud,
-                                             vtkSmartPointer<vtkMatrix4x4> ransacTransform);
+    vtkSmartPointer<vtkMatrix4x4> performICPWithNormals(
+        pcl::PointCloud<pcl::PointNormal>::Ptr sourceNormals,
+        pcl::PointCloud<pcl::PointNormal>::Ptr targetNormals,
+        vtkSmartPointer<vtkMatrix4x4> ransacTransform);
 
-signals:
+   signals:
 };

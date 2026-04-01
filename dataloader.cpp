@@ -11,19 +11,22 @@
 // QString testPatientStl = "SAIFI";
 // QString testPatientCbct = "SAIFI";
 
-// QString testPatientStl = "vijaya upper jaw";
-// QString testPatientCbct = "vijaya";
+QString testPatientStl = "vijaya upper jaw";
+QString testPatientCbct = "vijaya";
 
-QString testPatientStl = "rajeev LowerJaw";
-QString testPatientCbct = "Rajeev 1 op";
+// QString testPatientStl = "rajeev LowerJaw";
+// QString testPatientCbct = "Rajeev 1 op";
 
 // QString testPatientStl = "unknown";
 // QString testPatientCbct = "unknown";
 
+// QString testPatientStl = "ashish upper";
+// QString testPatientCbct = "Ashish 1 op";
+
 QString stlFilePath =
     "C:/Users/igrs/Desktop/Aswin/new_input_files/" + testPatientStl + ".stl";
 QString dicomFolderPath = "C:/Users/igrs/Desktop/Aswin/new_input_files/" +
-                          testPatientCbct + "/Man_Mask";
+                          testPatientCbct + "/Max_Mask";
 
 // QString dicomFolderPath = "C:/Users/cdac/Projects/SE2dcm";
 

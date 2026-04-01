@@ -64,6 +64,7 @@ void MainWindow::setupUI()
     m_rightRenderer->SetViewport(rightViewPort);
 
     m_currentIso = 1;
+    // m_currentIso = -999;
 }
 
 void MainWindow::setupData()

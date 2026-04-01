@@ -318,7 +318,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
     // base.
     icpMagnet.setUseReciprocalCorrespondences(true);
 
-    icpMagnet.setMaximumIterations(50);
+    icpMagnet.setMaximumIterations(20);
     icpMagnet.setTransformationEpsilon(1e-6);
 
     pcl::PointCloud<pcl::PointNormal>::Ptr intermediateSource(
@@ -341,7 +341,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
     // to prevent lateral surface sliding along the red baseline.
     icpLock.setUseReciprocalCorrespondences(true);
 
-    icpLock.setMaximumIterations(50);
+    icpLock.setMaximumIterations(20);
     icpLock.setTransformationEpsilon(1e-8);
 
     pcl::PointCloud<pcl::PointNormal> finalOutput;
@@ -606,9 +606,9 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     qDebug() << "Generating high-fidelity point to plane normal map...";
     float highFidelityNormalRadius = 1.5f;
     auto fineSourceNormals =
-        estimateNormals(pclSource, highFidelityNormalRadius);
+        estimateNormals(icpSource, highFidelityNormalRadius);
     auto fineTargetNormals =
-        estimateNormals(pclTarget, highFidelityNormalRadius);
+        estimateNormals(icpTarget, highFidelityNormalRadius);
 
     qDebug() << "Initiating strict point-to-plane ICP Micro-Refinement...";
     // Pass the purely decimated downsampled clouds into ICP for final anatomical locking

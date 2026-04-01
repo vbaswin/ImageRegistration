@@ -259,8 +259,9 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::removeDisconnectedArtifac
     std::vector<pcl::PointIndices> clusterIndices;
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
 
-    ec.setClusterTolerance(2.0); // A physical gap of 2mm severs a cluster
-    ec.setMinClusterSize(50);    // Ignore microscopic noise
+    // ec.setClusterTolerance(2.0);  // A physical gap of 2mm severs a cluster
+    ec.setClusterTolerance(15.0);  // A physical gap of 2mm severs a cluster
+    ec.setMinClusterSize(50);      // Ignore microscopic noise
     ec.setMaxClusterSize(inputCloud->points.size());
     ec.setSearchMethod(tree);
     ec.setInputCloud(inputCloud);
@@ -317,7 +318,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
     // base.
     icpMagnet.setUseReciprocalCorrespondences(true);
 
-    icpMagnet.setMaximumIterations(35);
+    icpMagnet.setMaximumIterations(50);
     icpMagnet.setTransformationEpsilon(1e-6);
 
     pcl::PointCloud<pcl::PointNormal>::Ptr intermediateSource(
@@ -334,7 +335,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
     icpLock.setInputSource(intermediateSource);
     icpLock.setInputTarget(targetNormals);
 
-    icpLock.setMaxCorrespondenceDistance(1.5f);  // Micro-groove lock
+    icpLock.setMaxCorrespondenceDistance(4.0f);  // Micro-groove lock
 
     // CONSTRAINT 3: Enforce symmetry across the Point-to-Plane tension phase
     // to prevent lateral surface sliding along the red baseline.
@@ -370,8 +371,8 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
 }
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool isFullJaw)
-{
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool isFullJaw,
+    float extractionThickness) {
     if (!inputCloud || inputCloud->empty()) {
         qWarning() << "Input cloud is empty. Cannot execute CropBox extraction.";
         return inputCloud;
@@ -431,8 +432,9 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     // float clipRearPercent = 0.10f;  // Clean up 10% of the rear depth scatters
 
     float clipBasePercent = isFullJaw ? 0.40f : 0.35f;
-    float clipRamusPercent = isFullJaw ? 0.15f : 0.00f; // DO NOT chop STL X-axis (Saves molars)
-    float clipRearPercent = isFullJaw ? 0.10f : 0.00f;  // DO NOT chop
+    float clipRamusPercent =
+        isFullJaw ? 0.15f : 0.00f;  // DO NOT chop STL X-axis (Saves molars)
+    float clipRearPercent = isFullJaw ? 0.10f : 0.02f;  // DO NOT chop
 
     float newMinZ, newMaxZ;
     if (crownIsAtMaxZ) {
@@ -475,28 +477,27 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     qDebug() << "Point count reduced down from:" << inputCloud->points.size() << "to"
              << finalWorldCloud->points.size();
 */
+    /*
     // phase 2: 2.5D virtual ray casting
     float rayGridResolution = 0.5f;
     std::unordered_map<std::pair<int, int>, float, GridHash> zBuffer;
 
     // Pass A: Build the Elevation Topography Map
-    for (const auto &pt : surgicallyBoundedCloud->points) { // Iterate on Bounded Cloud!
-        int x_idx = static_cast<int>(std::round(pt.x / rayGridResolution));
-        int y_idx = static_cast<int>(std::round(pt.y / rayGridResolution));
-        std::pair<int, int> cell(x_idx, y_idx);
-        if (zBuffer.find(cell) == zBuffer.end()) {
-            zBuffer[cell] = pt.z;
-        } else {
-            if (crownIsAtMaxZ) {
-                zBuffer[cell] = std::max(zBuffer[cell], pt.z);
-            } else {
+    for (const auto &pt : surgicallyBoundedCloud->points) { // Iterate on
+    Bounded Cloud! int x_idx = static_cast<int>(std::round(pt.x /
+    rayGridResolution)); int y_idx = static_cast<int>(std::round(pt.y /
+    rayGridResolution)); std::pair<int, int> cell(x_idx, y_idx); if
+    (zBuffer.find(cell) == zBuffer.end()) { zBuffer[cell] = pt.z; } else { if
+    (crownIsAtMaxZ) { zBuffer[cell] = std::max(zBuffer[cell], pt.z); } else {
                 zBuffer[cell] = std::min(zBuffer[cell], pt.z);
             }
         }
     }
-    // Pass B: Extract ONLY the Enamel Shell (Discarding identical internal mass)
-    float extractionThickness = 8.0f; // Only keep the surface + 8mm of vertical side walls
-    pcl::PointCloud<pcl::PointXYZ>::Ptr shellCloud(new pcl::PointCloud<pcl::PointXYZ>());
+    // Pass B: Extract ONLY the Enamel Shell (Discarding identical internal
+    // mass) float extractionThickness = 3.0f;  // Only keep the surface + 8mm
+    // of vertical side walls
+    pcl::PointCloud<pcl::PointXYZ>::Ptr shellCloud(new
+    pcl::PointCloud<pcl::PointXYZ>());
 
     for (const auto &pt : surgicallyBoundedCloud->points) {
         int x_idx = static_cast<int>(std::round(pt.x / rayGridResolution));
@@ -515,23 +516,27 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
             }
         }
     }
+*/
     // ==========================================================
-    // 5. RESTORATION TO WORLD COORDINATES
+    // 6. RESTORATION TO WORLD COORDINATES
     // ==========================================================
     pcl::PointCloud<pcl::PointXYZ>::Ptr finalWorldCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::transformPointCloud(*shellCloud, *finalWorldCloud, transformToCanonical.inverse());
+    pcl::transformPointCloud(*surgicallyBoundedCloud, *finalWorldCloud,
+                             transformToCanonical.inverse());
 
     qDebug() << "=== HYBRID GEOMETRIC ENGINE EXECUTED ===";
     qDebug() << "Total points natively loaded:" << inputCloud->points.size();
     qDebug() << "Macro artifacts deleted by Bounding Box:"
              << (alignedCloud->points.size() - surgicallyBoundedCloud->points.size());
     qDebug() << "Micro artifacts deleted by Ray Caster:"
-             << (surgicallyBoundedCloud->points.size() - shellCloud->points.size());
+             << (surgicallyBoundedCloud->points.size() -
+                 surgicallyBoundedCloud->points.size());
     qDebug() << "Perfectly cleansed enamel shell returned with points:"
              << finalWorldCloud->points.size();
 
-    // Route the World Cloud through our modular Cleanup Utility to destroy bottom scattering
-    return removeDisconnectedArtifacts(finalWorldCloud);
+    // Route the World Cloud through our modular Cleanup Utility to destroy
+    // bottom scattering return removeDisconnectedArtifacts(finalWorldCloud);
+    return finalWorldCloud;
 }
 
 vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
@@ -554,8 +559,8 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         return transform;
     }
 
-    auto croppedSource = extractTeethRegion(pclSource, false);
-    auto croppedTarget = extractTeethRegion(pclTarget, true);
+    auto croppedSource = extractTeethRegion(pclSource, false, 8.0f);
+    auto croppedTarget = extractTeethRegion(pclTarget, true, 8.0f);
     pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/cropped_source.ply",
                               *croppedSource);
     pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/cropped_target.ply",
@@ -594,13 +599,16 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
                                                                   sourceFPFH,
                                                                   targetFPFH,
                                                                   maxCorrespDist);
+    // immediately calculate their precision normals for the ICP engine.
+    auto icpSource = extractTeethRegion(pclSource, false, 3.0f);
+    auto icpTarget = extractTeethRegion(pclTarget, true, 3.0f);
 
     qDebug() << "Generating high-fidelity point to plane normal map...";
-    float highFidelityNormalRadius = 3.5f;
+    float highFidelityNormalRadius = 1.5f;
     auto fineSourceNormals =
-        estimateNormals(croppedSource, highFidelityNormalRadius);
+        estimateNormals(pclSource, highFidelityNormalRadius);
     auto fineTargetNormals =
-        estimateNormals(croppedTarget, highFidelityNormalRadius);
+        estimateNormals(pclTarget, highFidelityNormalRadius);
 
     qDebug() << "Initiating strict point-to-plane ICP Micro-Refinement...";
     // Pass the purely decimated downsampled clouds into ICP for final anatomical locking

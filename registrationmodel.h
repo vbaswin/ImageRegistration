@@ -21,7 +21,8 @@ public:
 
    private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr extractTeethRegion(
-        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool,
+        float extractionThickness = 8.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr convertVtkToPcl(vtkSmartPointer<vtkPolyData> polyData);
     pcl::PointCloud<pcl::PointXYZ>::Ptr downsampleCloud(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float leafSize);

@@ -21,9 +21,10 @@ public:
 
    private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr extractTeethRegion(
-        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool,
-        float extractionThickness = 8.0f);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr convertVtkToPcl(vtkSmartPointer<vtkPolyData> polyData);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool, float);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr convertVtkToPcl(
+        vtkSmartPointer<vtkPolyData> polyData);
     pcl::PointCloud<pcl::PointXYZ>::Ptr downsampleCloud(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float leafSize);
     pcl::PointCloud<pcl::PointNormal>::Ptr estimateNormals(
@@ -42,8 +43,10 @@ public:
     pcl::PointCloud<pcl::PointXYZ>::Ptr removeDisconnectedArtifacts(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
     vtkSmartPointer<vtkMatrix4x4> performICPWithNormals(
-        pcl::PointCloud<pcl::PointNormal>::Ptr sourceNormals,
-        pcl::PointCloud<pcl::PointNormal>::Ptr targetNormals,
+        pcl::PointCloud<pcl::PointNormal>::Ptr coarseSourceNormals,
+        pcl::PointCloud<pcl::PointNormal>::Ptr coarseTargetNormals,
+        pcl::PointCloud<pcl::PointNormal>::Ptr fineSourceNormals,
+        pcl::PointCloud<pcl::PointNormal>::Ptr fineTargetNormals,
         vtkSmartPointer<vtkMatrix4x4> ransacTransform);
 
    signals:

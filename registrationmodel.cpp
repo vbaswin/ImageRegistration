@@ -8,8 +8,11 @@
 #include <pcl/common/io.h>
 #include <pcl/common/pca.h>
 #include <pcl/common/transforms.h>
+#include <pcl/features/don.h>
 #include <pcl/features/fpfh_omp.h>
 #include <pcl/features/normal_3d_omp.h>  // omp uses multi-threading
+#include <pcl/features/normal_3d_omp.h>
+#include <pcl/filters/conditional_removal.h>
 #include <pcl/filters/crop_box.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/filter.h>
@@ -20,6 +23,7 @@
 #include <pcl/registration/icp.h>
 #include <pcl/search/kdtree.h>
 #include <pcl/segmentation/extract_clusters.h>
+#include <pcl/segmentation/sac_segmentation.h>
 #include <vtkPolyDataConnectivityFilter.h>
 
 #include <algorithm>
@@ -140,120 +144,184 @@ struct GridHash
         return h1 ^ (h2 << 1);
     }
 };
-
-/*
 pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud)
-{
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool isFullJaw,
+    float extractionThickness) {
     if (!inputCloud || inputCloud->empty()) {
-        qWarning() << "Input cloud is empty. Cannot extract teeth crowns.";
+        qWarning() << "Input cloud empty.";
         return inputCloud;
     }
 
-    // 1. Establish the Spatial Canonical Orientation via PCA longest-axes
-    pcl::PCA<pcl::PointXYZ> pca;
-    pca.setInputCloud(inputCloud);
+    // ==========================================================
+    // PHASE 1: Center of Mass & Spherical Quarantine (Anti-Ramus)
+    // ==========================================================
+    Eigen::Vector4f global_centroid;
+    pcl::compute3DCentroid(*inputCloud, global_centroid);
 
-    Eigen::Matrix3f eigenVectors = pca.getEigenVectors();
-    Eigen::Vector4f centroid = pca.getMean();
-    // Enforce strict right-handed coordinates to prevent spatial mirroring
-    eigenVectors.col(2) = eigenVectors.col(0).cross(eigenVectors.col(1));
+    pcl::PointCloud<pcl::PointXYZ>::Ptr coreCloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    // Universal Biological Constant: 45mm sphere perfectly captures the
+    // anterior arch (Incisors to Premolars) but physically locks out the Ramus.
+    float coreRadiusSq = 45.0f * 45.0f;
 
-    Eigen::Matrix4f transformToCanonical = Eigen::Matrix4f::Identity();
-    transformToCanonical.block<3, 3>(0, 0) = eigenVectors.transpose();
-    transformToCanonical.block<3, 1>(0, 3) = -1.0f
-                                             * (eigenVectors.transpose() * centroid.head<3>());
+    for (const auto& pt : inputCloud->points) {
+        float distSq =
+            (pt.x - global_centroid.x()) * (pt.x - global_centroid.x()) +
+            (pt.y - global_centroid.y()) * (pt.y - global_centroid.y()) +
+            (pt.z - global_centroid.z()) * (pt.z - global_centroid.z());
 
-    // Transform the full CBCT into the 'overhead' Canonical Space
-    pcl::PointCloud<pcl::PointXYZ>::Ptr alignedCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::transformPointCloud(*inputCloud, *alignedCloud, transformToCanonical);
+        if (distSq < coreRadiusSq) {
+            coreCloud->points.push_back(pt);
+        }
+    }
 
-    // 2. Discover Biological Orientation (Calculate if crowns point Upper or Lower Z)
+    // Safety fallback for extremely tiny, malformed models
+    if (coreCloud->points.size() < 100) {
+        coreCloud = inputCloud;
+    }
+
+    // ==========================================================
+    // PHASE 2: Low-Pass Roughness Isolation (Anti-Voxel)
+    // ==========================================================
+    pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::PointNormal> ne;
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
+        new pcl::search::KdTree<pcl::PointXYZ>());
+    ne.setInputCloud(coreCloud);
+    ne.setSearchMethod(tree);
+
+    // INCREASED to 6.0mm. Averages out microscopic DICOM staircases into
+    // 0-curvature, ensuring ONLY true macro-protrusions (Teeth) return high
+    // curvature.
+    ne.setRadiusSearch(6.0);
+    pcl::PointCloud<pcl::PointNormal>::Ptr normals(
+        new pcl::PointCloud<pcl::PointNormal>());
+    ne.compute(*normals);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr roughCloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    for (size_t i = 0; i < coreCloud->points.size(); ++i) {
+        if (normals->points[i].curvature >
+            0.03) {  // Lenient threshold for 6mm scale
+            roughCloud->points.push_back(coreCloud->points[i]);
+        }
+    }
+
+    if (roughCloud->points.size() < 100) {
+        roughCloud = coreCloud;
+    }
+
+    // ==========================================================
+    // PHASE 3: RANSAC Occlusal Plane Discovery
+    // ==========================================================
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+
+    pcl::SACSegmentation<pcl::PointXYZ> seg;
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType(pcl::SACMODEL_PLANE);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setDistanceThreshold(4.0);
+    seg.setMaxIterations(1000);
+    seg.setInputCloud(roughCloud);
+    seg.segment(*inliers, *coefficients);
+
+    if (inliers->indices.empty()) {
+        qWarning() << "Occlusal Plane calculation failed.";
+        return inputCloud;
+    }
+
+    // ==========================================================
+    // PHASE 4: Global Tilt Eradication
+    // ==========================================================
+    Eigen::Vector3f plane_normal(coefficients->values[0],
+                                 coefficients->values[1],
+                                 coefficients->values[2]);
+    plane_normal.normalize();
+
+    Eigen::Vector3f z_axis(0.0f, 0.0f, 1.0f);
+    float cos_theta = plane_normal.dot(z_axis);
+    Eigen::Vector3f rotation_axis = plane_normal.cross(z_axis).normalized();
+    float angle = std::acos(cos_theta);
+
+    Eigen::Matrix4f transform_to_canonical = Eigen::Matrix4f::Identity();
+    if (std::abs(cos_theta) < 0.999f) {
+        Eigen::Matrix3f rotation;
+        rotation = Eigen::AngleAxisf(angle, rotation_axis);
+        transform_to_canonical.block<3, 3>(0, 0) = rotation;
+    }
+
+    Eigen::Vector4f plane_centroid;
+    pcl::compute3DCentroid(*roughCloud, *inliers, plane_centroid);
+    transform_to_canonical.block<3, 1>(0, 3) =
+        -1.0f *
+        (transform_to_canonical.block<3, 3>(0, 0) * plane_centroid.head<3>());
+
+    // IMPORTANT: Transform the ENTIRE inputCloud, not just the cropped core
+    // sphere. This perfectly centers all molars, incisors, and root mass at
+    // exactly Z=0.
+    pcl::PointCloud<pcl::PointXYZ>::Ptr leveledCloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::transformPointCloud(*inputCloud, *leveledCloud,
+                             transform_to_canonical);
+
+    // ==========================================================
+    // PHASE 5: Gravity Polarity Enforcement
+    // ==========================================================
+    Eigen::Vector4f full_centroid;
+    pcl::compute3DCentroid(*leveledCloud, full_centroid);
+
+    if (full_centroid.z() > 0) {
+        Eigen::Matrix4f flip = Eigen::Matrix4f::Identity();
+        flip(1, 1) = -1.0f;  // Invert Y
+        flip(2, 2) =
+            -1.0f;  // Invert Z (Flips bone down, forces teeth up to +Z)
+        transform_to_canonical = flip * transform_to_canonical;
+        pcl::transformPointCloud(*inputCloud, *leveledCloud,
+                                 transform_to_canonical);
+    }
+
+    // ==========================================================
+    // PHASE 6: Surgical Crown Extractor
+    // ==========================================================
     pcl::PointXYZ minPt, maxPt;
-    pcl::getMinMax3D(*alignedCloud, minPt, maxPt);
+    pcl::getMinMax3D(*leveledCloud, minPt, maxPt);
 
-    float checkDepth = 5.0f;
-    pcl::PassThrough<pcl::PointXYZ> passCheck;
-    passCheck.setInputCloud(alignedCloud);
-    passCheck.setFilterFieldName("z");
+    pcl::PassThrough<pcl::PointXYZ> pass;
+    pass.setInputCloud(leveledCloud);
+    pass.setFilterFieldName("z");
 
-    pcl::PointCloud<pcl::PointXYZ> bottomSlice, topSlice;
-    passCheck.setFilterLimits(minPt.z, minPt.z + checkDepth);
-    passCheck.filter(bottomSlice);
-    passCheck.setFilterLimits(maxPt.z - checkDepth, maxPt.z);
-    passCheck.filter(topSlice);
+    // Slice exactly 12mm downward from the absolute maximum peak.
+    float safeCrownHeight =
+        extractionThickness > 0.1f ? extractionThickness : 12.0f;
+    pass.setFilterLimits(maxPt.z - safeCrownHeight, maxPt.z + 1.0f);
 
-    bool crownIsAtMaxZ = (topSlice.points.size() < bottomSlice.points.size());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr leveledCrowns(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    pass.filter(*leveledCrowns);
 
     // ==========================================================
-    // 3. VIRTUAL RAY CASTING (2.5D ELEVATION Z-BUFFER MAP)
+    // PHASE 7: Coordinate Restoration
     // ==========================================================
-    float rayGridResolution = 0.5f; // Shoot a ray constraint every 0.5mm
+    pcl::PointCloud<pcl::PointXYZ>::Ptr finalWorldCloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::transformPointCloud(*leveledCrowns, *finalWorldCloud,
+                             transform_to_canonical.inverse());
 
-    // Utilizing your previously authored GridHash
-    std::unordered_map<std::pair<int, int>, float, GridHash> zBuffer;
-
-    // Pass A: Ray collision detection (Find the highest/lowest exterior point for every grid sector)
-    for (const auto &pt : alignedCloud->points) {
-        int x_idx = static_cast<int>(std::round(pt.x / rayGridResolution));
-        int y_idx = static_cast<int>(std::round(pt.y / rayGridResolution));
-        std::pair<int, int> cell(x_idx, y_idx);
-
-        if (zBuffer.find(cell) == zBuffer.end()) {
-            zBuffer[cell] = pt.z;
-        } else {
-            if (crownIsAtMaxZ) {
-                zBuffer[cell] = std::max(zBuffer[cell], pt.z);
-            } else {
-                zBuffer[cell] = std::min(zBuffer[cell], pt.z);
-            }
-        }
-    }
-
-    // Pass B: Volumetric Extraction (Extract the hit-surface + a highly specific enamel thickness)
-    float extractionThickness = 8.0f; // Slice precisely 8mm beneath the ray collision map
-    pcl::PointCloud<pcl::PointXYZ>::Ptr shellCloud(new pcl::PointCloud<pcl::PointXYZ>());
-
-    for (const auto &pt : alignedCloud->points) {
-        int x_idx = static_cast<int>(std::round(pt.x / rayGridResolution));
-        int y_idx = static_cast<int>(std::round(pt.y / rayGridResolution));
-        std::pair<int, int> cell(x_idx, y_idx);
-
-        float surfaceZ = zBuffer[cell];
-
-        // Keep ONLY the structural enamel shell points that are within 'extractionThickness' of the collision
-        if (crownIsAtMaxZ) {
-            if (pt.z >= surfaceZ - extractionThickness) {
-                shellCloud->points.push_back(pt);
-            }
-        } else {
-            if (pt.z <= surfaceZ + extractionThickness) {
-                shellCloud->points.push_back(pt);
-            }
-        }
-    }
-
-    // 4. Safely Transport the clean Ray-Casted shell back to its Original World Coordinates
-    pcl::PointCloud<pcl::PointXYZ>::Ptr finalWorldCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    Eigen::Matrix4f transformToOriginal = transformToCanonical.inverse();
-    pcl::transformPointCloud(*shellCloud, *finalWorldCloud, transformToOriginal);
-
-    // Telemetry output for debugging physical dimensions
-    qDebug() << "=== 2.5D Ray Cast Extraction Executed ===";
-    qDebug() << "Total Z-Buffer rays mapped correctly across top surface:" << zBuffer.size();
-    qDebug() << "Ray Cast Obliterated internal bone, points radically reduced from:"
-             << inputCloud->points.size() << "to" << finalWorldCloud->points.size();
+    qDebug() << "=== Core-Isolated Semantic Extraction ===";
+    qDebug() << "Original CBCT/STL Points:" << inputCloud->points.size();
+    qDebug() << "Surgically Severed Crowns:" << finalWorldCloud->points.size();
 
     return finalWorldCloud;
 }
-*/
+
 // ==========================================================
 // UTILITY: Disconnected Artifact Cleanup
 // ==========================================================
-pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::removeDisconnectedArtifacts(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud)
-{
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
+pcl::PointCloud<pcl::PointXYZ>::Ptr
+RegistrationModel::removeDisconnectedArtifacts(
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
+        new pcl::search::KdTree<pcl::PointXYZ>());
     tree->setInputCloud(inputCloud);
 
     std::vector<pcl::PointIndices> clusterIndices;
@@ -267,13 +335,13 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::removeDisconnectedArtifac
     ec.setInputCloud(inputCloud);
     ec.extract(clusterIndices);
 
-    if (clusterIndices.empty())
-        return inputCloud;
+    if (clusterIndices.empty()) return inputCloud;
 
     // PCL automatically sorts clusters by descending size.
     // Cluster 0 is mathematically guaranteed to be our continuous dental arch.
-    pcl::PointCloud<pcl::PointXYZ>::Ptr purifiedCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    for (const auto &idx : clusterIndices[0].indices) {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr purifiedCloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    for (const auto& idx : clusterIndices[0].indices) {
         purifiedCloud->points.push_back(inputCloud->points[idx]);
     }
 
@@ -283,11 +351,13 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::removeDisconnectedArtifac
 }
 
 // ==========================================================
-// UTILITY: Cascaded (Two-Stage) High-Fidelity ICP Alignment
+// UTILITY: Cascaded (Two-Stage Multi-Resolution) High-Fidelity ICP
 // ==========================================================
 vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
-    pcl::PointCloud<pcl::PointNormal>::Ptr sourceNormals,
-    pcl::PointCloud<pcl::PointNormal>::Ptr targetNormals,
+    pcl::PointCloud<pcl::PointNormal>::Ptr coarseSourceNormals,
+    pcl::PointCloud<pcl::PointNormal>::Ptr coarseTargetNormals,
+    pcl::PointCloud<pcl::PointNormal>::Ptr fineSourceNormals,
+    pcl::PointCloud<pcl::PointNormal>::Ptr fineTargetNormals,
     vtkSmartPointer<vtkMatrix4x4> ransacTransform) {
     // 1. Convert initial pose to Eigen Matrix
     Eigen::Matrix4f eigenInitial = Eigen::Matrix4f::Identity();
@@ -297,51 +367,61 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
         }
     }
 
-    pcl::PointCloud<pcl::PointNormal>::Ptr alignedSource(
+    // 2. Apply initial RANSAC orientation to BOTH the coarse and fine source
+    // clouds
+    pcl::PointCloud<pcl::PointNormal>::Ptr alignedCoarseSource(
         new pcl::PointCloud<pcl::PointNormal>());
-    pcl::transformPointCloudWithNormals(*sourceNormals, *alignedSource,
+    pcl::transformPointCloudWithNormals(*coarseSourceNormals,
+                                        *alignedCoarseSource, eigenInitial);
+
+    pcl::PointCloud<pcl::PointNormal>::Ptr alignedFineSource(
+        new pcl::PointCloud<pcl::PointNormal>());
+    pcl::transformPointCloudWithNormals(*fineSourceNormals, *alignedFineSource,
                                         eigenInitial);
 
     // ==========================================================
-    // STAGE 1: "The Magnet" (Standard ICP to collapse the Z-Gap)
+    // STAGE 1: "The Magnet" (Executes FAST on Coarse points)
     // ==========================================================
     pcl::IterativeClosestPoint<pcl::PointNormal, pcl::PointNormal> icpMagnet;
-    icpMagnet.setInputSource(alignedSource);
-    icpMagnet.setInputTarget(targetNormals);
+    icpMagnet.setInputSource(alignedCoarseSource);
+    icpMagnet.setInputTarget(coarseTargetNormals);
 
-    // CONTRAINT 1: Tightened to 5.0mm. 15.0mm allows the gums to latch onto the
-    // deep basal bone.
+    // CONSTRAINT 1: Allow 5.0mm spatial reach to pull the models together.
     icpMagnet.setMaxCorrespondenceDistance(5.0f);
-
-    // CONSTRAINT 2: Activate Mathematical Symmetry. This instantly isolates the
-    // crowns and terminates the downward drag generated by the red jawbone
-    // base.
+    // CONSTRAINT 2: Symmetry drastically prevents sliding.
     icpMagnet.setUseReciprocalCorrespondences(true);
-
     icpMagnet.setMaximumIterations(20);
     icpMagnet.setTransformationEpsilon(1e-6);
 
-    pcl::PointCloud<pcl::PointNormal>::Ptr intermediateSource(
+    pcl::PointCloud<pcl::PointNormal>::Ptr intermediateCoarseSource(
         new pcl::PointCloud<pcl::PointNormal>());
-    icpMagnet.align(*intermediateSource);
+    icpMagnet.align(*intermediateCoarseSource);
 
     Eigen::Matrix4f magnetMatrix = icpMagnet.getFinalTransformation();
 
+    // 3. Mathematically advance the pure HIGH-RESOLUTION cloud using the Stage
+    // 1 Matrix
+    pcl::PointCloud<pcl::PointNormal>::Ptr intermediateFineSource(
+        new pcl::PointCloud<pcl::PointNormal>());
+    pcl::transformPointCloudWithNormals(*alignedFineSource,
+                                        *intermediateFineSource, magnetMatrix);
+
     // ==========================================================
-    // STAGE 2: "The Micro-Lock" (Point-to-Plane ICP to lock grooves)
+    // STAGE 2: "The Micro-Lock" (Executes precise lock on Fine points)
     // ==========================================================
     pcl::IterativeClosestPointWithNormals<pcl::PointNormal, pcl::PointNormal>
         icpLock;
-    icpLock.setInputSource(intermediateSource);
-    icpLock.setInputTarget(targetNormals);
+    icpLock.setInputSource(intermediateFineSource);
+    icpLock.setInputTarget(fineTargetNormals);
 
-    icpLock.setMaxCorrespondenceDistance(4.0f);  // Micro-groove lock
-
-    // CONSTRAINT 3: Enforce symmetry across the Point-to-Plane tension phase
-    // to prevent lateral surface sliding along the red baseline.
+    // STRICT CONSTRAINT: Cut correspondence distance right down for
+    // micro-grooves.
+    icpLock.setMaxCorrespondenceDistance(2.0f);
     icpLock.setUseReciprocalCorrespondences(true);
 
-    icpLock.setMaximumIterations(20);
+    // ARCHITECTURAL SPEED FIX: The Magnet has already done the heavy lifting.
+    // Do NOT let the dense cloud calculate 20 iterations. Clamp at 5.
+    icpLock.setMaximumIterations(5);
     icpLock.setTransformationEpsilon(1e-8);
 
     pcl::PointCloud<pcl::PointNormal> finalOutput;
@@ -361,187 +441,18 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
         }
     }
 
-    qDebug() << "=== Cascaded ICP Convergence ===";
-    qDebug() << "Magnet (Stage 1) Converged:" << icpMagnet.hasConverged()
+    qDebug() << "=== Cascaded Multi-Resolution ICP Convergence ===";
+    qDebug() << "Coarse Magnet (Stage 1) Converged:" << icpMagnet.hasConverged()
              << " | Score:" << icpMagnet.getFitnessScore();
-    qDebug() << "Lock (Stage 2) Converged:" << icpLock.hasConverged()
+    qDebug() << "Fine Lock (Stage 2) Converged:" << icpLock.hasConverged()
              << " | Score:" << icpLock.getFitnessScore();
 
     return finalVtkTrans;
 }
 
-pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool isFullJaw,
-    float extractionThickness) {
-    if (!inputCloud || inputCloud->empty()) {
-        qWarning() << "Input cloud is empty. Cannot execute CropBox extraction.";
-        return inputCloud;
-    }
-
-    // 1. Establish Canonical Orientation via PCA longest-axes
-    pcl::PCA<pcl::PointXYZ> pca;
-    pca.setInputCloud(inputCloud);
-
-    Eigen::Matrix3f eigenVectors = pca.getEigenVectors();
-    Eigen::Vector4f centroid = pca.getMean();
-    // Enforce strict right-handed coordinates
-    eigenVectors.col(2) = eigenVectors.col(0).cross(eigenVectors.col(1));
-
-    Eigen::Matrix4f transformToCanonical = Eigen::Matrix4f::Identity();
-    transformToCanonical.block<3, 3>(0, 0) = eigenVectors.transpose();
-    transformToCanonical.block<3, 1>(0, 3) = -1.0f
-                                             * (eigenVectors.transpose() * centroid.head<3>());
-
-    // Transform into perfectly aligned 'Bounding Box' Space
-    pcl::PointCloud<pcl::PointXYZ>::Ptr alignedCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::transformPointCloud(*inputCloud, *alignedCloud, transformToCanonical);
-
-    // 2. Measure the Anatomical Dimensions of the Jaw
-    pcl::PointXYZ minPt, maxPt;
-    pcl::getMinMax3D(*alignedCloud, minPt, maxPt);
-
-    float rangeX = maxPt.x - minPt.x; // Width of Jaw
-    float rangeY = maxPt.y - minPt.y; // Depth of Jaw
-    float rangeZ = maxPt.z - minPt.z; // Height of Jaw
-
-    // 3. Density Heuristic (Determine if Crowns are facing +Z or -Z)
-    float checkDepth = 5.0f;
-    pcl::PassThrough<pcl::PointXYZ> passCheck;
-    passCheck.setInputCloud(alignedCloud);
-    passCheck.setFilterFieldName("z");
-
-    pcl::PointCloud<pcl::PointXYZ> bottomSlice, topSlice;
-    passCheck.setFilterLimits(minPt.z, minPt.z + checkDepth);
-    passCheck.filter(bottomSlice);
-    passCheck.setFilterLimits(maxPt.z - checkDepth, maxPt.z);
-    passCheck.filter(topSlice);
-
-    bool crownIsAtMaxZ;
-    if (isFullJaw) {
-        crownIsAtMaxZ = (topSlice.points.size() < bottomSlice.points.size());
-    } else {
-        crownIsAtMaxZ = (topSlice.points.size() > bottomSlice.points.size());
-    }
-
-    // ==========================================================
-    // 4. PROPORTIONAL BOUNDING BOX CLIPPING
-    // Set your anatomical clipping percentages here
-    // ==========================================================
-    // float clipBasePercent = 0.40f;  // Amputate the bottom 40% (Thick jaw base)
-    // float clipRamusPercent = 0.15f; // Amputate the outer 15% edges (Skull joints / Ramus)
-    // float clipRearPercent = 0.10f;  // Clean up 10% of the rear depth scatters
-
-    float clipBasePercent = isFullJaw ? 0.40f : 0.35f;
-    float clipRamusPercent =
-        isFullJaw ? 0.15f : 0.00f;  // DO NOT chop STL X-axis (Saves molars)
-    float clipRearPercent = isFullJaw ? 0.10f : 0.02f;  // DO NOT chop
-
-    float newMinZ, newMaxZ;
-    if (crownIsAtMaxZ) {
-        newMinZ = minPt.z + (rangeZ * clipBasePercent); // Cut bottom up
-        newMaxZ = maxPt.z;
-    } else {
-        newMinZ = minPt.z;
-        newMaxZ = maxPt.z - (rangeZ * clipBasePercent); // Cut top down
-    }
-
-    // Clip the extremes of the length and width (Where the ramus/skull joints strictly exist)
-    float newMinX = minPt.x + (rangeX * clipRamusPercent);
-    float newMaxX = maxPt.x - (rangeX * clipRamusPercent);
-
-    float newMinY = minPt.y + (rangeY * clipRearPercent);
-    float newMaxY = maxPt.y - (rangeY * clipRearPercent);
-
-    // ==========================================================
-    // 5. EXECUTE 3D CROPBOX
-    // ==========================================================
-    pcl::CropBox<pcl::PointXYZ> cropBox;
-    cropBox.setInputCloud(alignedCloud);
-
-    // Set absolute 3D Cartesian limits
-    cropBox.setMin(Eigen::Vector4f(newMinX, newMinY, newMinZ, 1.0f));
-    cropBox.setMax(Eigen::Vector4f(newMaxX, newMaxY, newMaxZ, 1.0f));
-
-    pcl::PointCloud<pcl::PointXYZ>::Ptr surgicallyBoundedCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    cropBox.filter(*surgicallyBoundedCloud);
-
-    /*
-    // 6. Return the isolated teeth back to normal World Coordinates
-    pcl::PointCloud<pcl::PointXYZ>::Ptr finalWorldCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::transformPointCloud(*surgicallyBoundedCloud,
-                             *finalWorldCloud,
-                             transformToCanonical.inverse());
-
-    qDebug() << "=== Proportional Bounding Box Crop Executed ===";
-    qDebug() << "Amputated skull joints (X limits) and structural base (Z limits).";
-    qDebug() << "Point count reduced down from:" << inputCloud->points.size() << "to"
-             << finalWorldCloud->points.size();
-*/
-    /*
-    // phase 2: 2.5D virtual ray casting
-    float rayGridResolution = 0.5f;
-    std::unordered_map<std::pair<int, int>, float, GridHash> zBuffer;
-
-    // Pass A: Build the Elevation Topography Map
-    for (const auto &pt : surgicallyBoundedCloud->points) { // Iterate on
-    Bounded Cloud! int x_idx = static_cast<int>(std::round(pt.x /
-    rayGridResolution)); int y_idx = static_cast<int>(std::round(pt.y /
-    rayGridResolution)); std::pair<int, int> cell(x_idx, y_idx); if
-    (zBuffer.find(cell) == zBuffer.end()) { zBuffer[cell] = pt.z; } else { if
-    (crownIsAtMaxZ) { zBuffer[cell] = std::max(zBuffer[cell], pt.z); } else {
-                zBuffer[cell] = std::min(zBuffer[cell], pt.z);
-            }
-        }
-    }
-    // Pass B: Extract ONLY the Enamel Shell (Discarding identical internal
-    // mass) float extractionThickness = 3.0f;  // Only keep the surface + 8mm
-    // of vertical side walls
-    pcl::PointCloud<pcl::PointXYZ>::Ptr shellCloud(new
-    pcl::PointCloud<pcl::PointXYZ>());
-
-    for (const auto &pt : surgicallyBoundedCloud->points) {
-        int x_idx = static_cast<int>(std::round(pt.x / rayGridResolution));
-        int y_idx = static_cast<int>(std::round(pt.y / rayGridResolution));
-        std::pair<int, int> cell(x_idx, y_idx);
-
-        float surfaceZ = zBuffer[cell];
-
-        if (crownIsAtMaxZ) {
-            if (pt.z >= surfaceZ - extractionThickness) {
-                shellCloud->points.push_back(pt);
-            }
-        } else {
-            if (pt.z <= surfaceZ + extractionThickness) {
-                shellCloud->points.push_back(pt);
-            }
-        }
-    }
-*/
-    // ==========================================================
-    // 6. RESTORATION TO WORLD COORDINATES
-    // ==========================================================
-    pcl::PointCloud<pcl::PointXYZ>::Ptr finalWorldCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    pcl::transformPointCloud(*surgicallyBoundedCloud, *finalWorldCloud,
-                             transformToCanonical.inverse());
-
-    qDebug() << "=== HYBRID GEOMETRIC ENGINE EXECUTED ===";
-    qDebug() << "Total points natively loaded:" << inputCloud->points.size();
-    qDebug() << "Macro artifacts deleted by Bounding Box:"
-             << (alignedCloud->points.size() - surgicallyBoundedCloud->points.size());
-    qDebug() << "Micro artifacts deleted by Ray Caster:"
-             << (surgicallyBoundedCloud->points.size() -
-                 surgicallyBoundedCloud->points.size());
-    qDebug() << "Perfectly cleansed enamel shell returned with points:"
-             << finalWorldCloud->points.size();
-
-    // Route the World Cloud through our modular Cleanup Utility to destroy
-    // bottom scattering return removeDisconnectedArtifacts(finalWorldCloud);
-    return finalWorldCloud;
-}
-
 vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
-    vtkSmartPointer<vtkPolyData> sourceStl, vtkSmartPointer<vtkPolyData> targetSurface)
-{
+    vtkSmartPointer<vtkPolyData> sourceStl,
+    vtkSmartPointer<vtkPolyData> targetSurface) {
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclSource = convertVtkToPcl(sourceStl);
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclTarget = convertVtkToPcl(targetSurface);
 
@@ -614,10 +525,20 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     auto fineTargetNormals =
         estimateNormals(icpTarget, highFidelityNormalRadius);
 
-    qDebug() << "Initiating strict point-to-plane ICP Micro-Refinement...";
-    // Pass the purely decimated downsampled clouds into ICP for final anatomical locking
+    // 2. Generate the DECIMATED Macro-Map (Used for High-Speed Magnet
+    // alignment)
+    qDebug()
+        << "Generating decimated normals for high-speed macro alignment...";
+    float coarseLeafSize = 1.0f;  // Eliminates massive calculation overhead
+    auto coarseSource = downsampleCloud(icpSource, coarseLeafSize);
+    auto coarseTarget = downsampleCloud(icpTarget, coarseLeafSize);
+    auto coarseSourceNormals =
+        estimateNormals(coarseSource, 2.0f);  // Moderate normal search
+    auto coarseTargetNormals = estimateNormals(coarseTarget, 2.0f);
+    qDebug() << "Initiating Multi-Resolution Cascaded ICP...";
     vtkSmartPointer<vtkMatrix4x4> absoluteLockedTransform =
-        performICPWithNormals(fineSourceNormals, fineTargetNormals,
+        performICPWithNormals(coarseSourceNormals, coarseTargetNormals,
+                              fineSourceNormals, fineTargetNormals,
                               ransacTransform);
     return absoluteLockedTransform;
 }

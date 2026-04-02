@@ -22,3 +22,39 @@ QPushButton:checked {
 /*    background-color: #;*/
     background-color: #2FA4D7;
 }
+
+QComboBox {
+    color: white;
+    background-color: #406093;
+    font-family: "JetBrainsMOno Nerd Font", "JetBrains Mono", monospace;
+    font-size: 14px;
+    padding: 6px 12px;
+    border-radius: 10px;
+    border: none;
+}
+
+/* Inherit the exact hover effect from the PushButton */
+QComboBox:hover {
+    background-color: #007ACC;
+}
+
+/* Remove the harsh vertical divider next to the drop-down arrow */
+QComboBox::drop-down {
+    border: none;
+    padding-right: 10px;
+}
+
+/* Style the popup dropdown list */
+QComboBox QAbstractItemView {
+    color: white;
+    background-color: #1A3263; /* Matches the right control panel background */
+    selection-background-color: #007ACC;
+    selection-color: white;
+
+    border: 2px solid #406093;
+    border-radius: 8px;
+    padding: 4px;
+
+    /* Critical: Removes the legacy dotted window focus ring */
+    outline: none;
+}

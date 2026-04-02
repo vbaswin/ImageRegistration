@@ -20,6 +20,7 @@ public:
     explicit DataLoader(QObject *parent = nullptr);
     bool loadStl(QString &filePath);
     bool loadDicom(QString &filePath);
+    void loadTestingDataset(int index);
     void setupTransferFunctions();
     // bool loadCbct(QString &filePath);
     vtkSmartPointer<vtkPolyData> getStlData();

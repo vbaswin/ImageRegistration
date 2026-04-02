@@ -9,26 +9,25 @@
 #include <vtkStringArray.h>
 
 // QString testPatientStl = "SAIFI";
-// QString testPatientCbct = "SAIFI";
+// QString testPatientCbct = "SAIFI/Man_mask";
 
-QString testPatientStl = "vijaya upper jaw";
-QString testPatientCbct = "vijaya";
+// QString testPatientStl = "vijaya upper jaw";
+// QString testPatientCbct = "vijaya/Max_mask";
 
 // QString testPatientStl = "rajeev LowerJaw";
-// QString testPatientCbct = "Rajeev 1 op";
+// QString testPatientCbct = "Rajeev 1 op/Man_mask";
 
 // QString testPatientStl = "unknown";
-// QString testPatientCbct = "unknown";
+// QString testPatientCbct = "unknown/Man_mask";
 
 // QString testPatientStl = "ashish upper";
-// QString testPatientCbct = "Ashish 1 op";
+// QString testPatientCbct = "Ashish 1 op/Max_mask";
 
-QString stlFilePath =
-    "C:/Users/igrs/Desktop/Aswin/new_input_files/" + testPatientStl + ".stl";
-QString dicomFolderPath = "C:/Users/igrs/Desktop/Aswin/new_input_files/" +
-                          testPatientCbct + "/Max_Mask";
-
-// QString dicomFolderPath = "C:/Users/cdac/Projects/SE2dcm";
+// QString stlFilePath =
+//     "C:/Users/igrs/Desktop/Aswin/new_input_files/" + testPatientStl + ".stl";
+// QString dicomFolderPath = "C:/Users/igrs/Desktop/Aswin/new_input_files/" +
+//                           testPatientCbct;  // QString dicomFolderPath =
+// "C:/Users/cdac/Projects/SE2dcm";
 
 DataLoader::DataLoader(QObject *parent)
     : QObject{parent}
@@ -61,8 +60,9 @@ DataLoader::DataLoader(QObject *parent)
     m_isoProp->SetSpecular(0.4);
     m_isoProp->SetSpecularPower(50.0);
 
-    loadStl(stlFilePath);
-    loadDicom(dicomFolderPath);
+    // loadStl(stlFilePath);
+    // loadDicom(dicomFolderPath);
+    loadTestingDataset(0);
 
     setupTransferFunctions();
 }
@@ -120,7 +120,8 @@ void DataLoader::setupTransferFunctions()
     m_prop->SetColor(m_colorTransferFunction);
 
     // isoSurface properties
-    m_isoProp->SetColor(255.0 / 255.0, 255.0 / 255.0, 255.0 / 255.0);
+    // m_isoProp->SetColor(255.0 / 255.0, 255.0 / 255.0, 255.0 / 255.0);
+    m_isoProp->SetColor(1.0, 0.0, 0.0);
 }
 bool DataLoader::loadStl(QString &filePath)
 {
@@ -206,6 +207,42 @@ bool DataLoader::loadDicom(QString &folderPath)
     }
 
     return true;
+}
+
+void DataLoader::loadTestingDataset(int index) {
+    QString testPatientStl, testPatientCbct;
+    switch (index) {
+        case 0:
+            testPatientStl = "SAIFI";
+            testPatientCbct = "SAIFI/Man_mask";
+            break;
+        case 1:
+            testPatientStl = "vijaya upper jaw";
+            testPatientCbct = "vijaya/Max_mask";
+            break;
+        case 2:
+            testPatientStl = "rajeev LowerJaw";
+            testPatientCbct = "Rajeev 1 op/Man_mask";
+            break;
+        case 3:
+            testPatientStl = "unknown";
+            testPatientCbct = "unknown/Man_mask";
+            break;
+        case 4:
+            testPatientStl = "ashish upper";
+            testPatientCbct = "Ashish 1 op/Max_mask";
+            break;
+        default:
+            return;  // Fail fast pattern
+    }
+
+    QString stlFilePath = "C:/Users/igrs/Desktop/Aswin/new_input_files/" +
+                          testPatientStl + ".stl";
+    QString dicomFolderPath =
+        "C:/Users/igrs/Desktop/Aswin/new_input_files/" + testPatientCbct;
+
+    loadStl(stlFilePath);
+    loadDicom(dicomFolderPath);
 }
 
 vtkSmartPointer<vtkPolyData> DataLoader::getStlData()

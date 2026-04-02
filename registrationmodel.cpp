@@ -545,10 +545,12 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclSource = convertVtkToPcl(sourceStl);
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclTarget = convertVtkToPcl(targetSurface);
 
-    pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/initial_target.ply",
-                              *pclTarget);
-    pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/initial_source.ply",
-                              *pclSource);
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_target.ply",
+        *pclTarget);
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_source.ply",
+        *pclSource);
 
     vtkSmartPointer<vtkMatrix4x4> transform = vtkSmartPointer<vtkMatrix4x4>::New();
     transform->Identity();
@@ -561,10 +563,12 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
 
     auto croppedSource = extractTeethRegion(pclSource, false, 8.0f);
     auto croppedTarget = extractTeethRegion(pclTarget, true, 8.0f);
-    pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/cropped_source.ply",
-                              *croppedSource);
-    pcl::io::savePLYFileASCII("C:/Users/igrs/Desktop/Aswin/ImageRegistration/cropped_target.ply",
-                              *croppedTarget);
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
+        *croppedSource);
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_target.ply",
+        *croppedTarget);
 
     // A. preprocessing stage
     float voxelLeafSize = 3.0f;
@@ -575,10 +579,10 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     auto targetDown = downsampleCloud(croppedTarget, voxelLeafSize);
 
     pcl::io::savePLYFileASCII(
-        "C:/Users/igrs/Desktop/Aswin/ImageRegistration/down_source.ply",
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/down_source.ply",
         *sourceDown);
     pcl::io::savePLYFileASCII(
-        "C:/Users/igrs/Desktop/Aswin/ImageRegistration/down_target.ply",
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/down_target.ply",
         *targetDown);
 
     auto sourceNormals = estimateNormals(sourceDown, normalRadius);

@@ -1,16 +1,19 @@
 #pragma once
+#include <QVTKOpenGLNativeWidget.h>
+#include <vtkGPUVolumeRayCastMapper.h>
+
+#include <QComboBox>
 #include <QMainWindow>
 #include <QPushButton>
 #include <QSlider>
-#include <QVTKOpenGLNativeWidget.h>
+#include <memory>
+
 #include "registerviewmodel.h"
 #include "vtkFlyingEdges3D.h"
 #include "vtkGenericOpenGLRenderWindow.h"
 #include "vtkImageData.h"
 #include "vtkPolyDataMapper.h"
 #include "vtkRenderer.h"
-#include <memory>
-#include <vtkGPUVolumeRayCastMapper.h>
 
 class MainWindow : public QMainWindow
 {
@@ -25,13 +28,15 @@ public:
 public slots:
     void onSliderChanged(int val);
     void onAutoRegisterClicked(bool checked);
+    void onDatasetChanged(int index);
 
-private:
+   private:
     QWidget *m_container = nullptr;
     QVTKOpenGLNativeWidget *m_vtkWidget = nullptr;
     QWidget *m_rightControlsWidget = nullptr;
     QSlider *m_isoSlider = nullptr;
     QPushButton *m_autoRegisterBtn = nullptr;
+    QComboBox* m_datasetCombo;
 
     vtkNew<vtkGenericOpenGLRenderWindow> m_renderWindow;
     vtkNew<vtkRenderer> m_leftRenderer;

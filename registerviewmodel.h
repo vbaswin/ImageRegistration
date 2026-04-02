@@ -18,7 +18,8 @@ public:
     vtkSmartPointer<vtkProperty> getSurfaceProps();
 
     vtkSmartPointer<vtkMatrix4x4> performRegistration(double isoValue);
-signals:
+    void loadTestingDataset(int index);
+   signals:
     void dataLoaded();
 
 private:

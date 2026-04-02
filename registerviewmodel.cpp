@@ -42,3 +42,7 @@ vtkSmartPointer<vtkMatrix4x4> RegisterViewModel::performRegistration(double isoV
 
     return m_regModel->computeTransform(sourceStl, targetSurface);
 }
+
+void RegisterViewModel::loadTestingDataset(int index) {
+    m_dataLoader->loadTestingDataset(index);
+}

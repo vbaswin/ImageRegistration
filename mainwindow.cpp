@@ -15,6 +15,8 @@ MainWindow::MainWindow(std::shared_ptr<RegisterViewModel> rVM, QWidget *parent)
 
     connect(m_isoSlider, &QSlider::valueChanged, this, &MainWindow::onSliderChanged);
     connect(m_autoRegisterBtn, &QPushButton::toggled, this, &MainWindow::onAutoRegisterClicked);
+    connect(m_datasetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onDatasetChanged);
 }
 
 MainWindow::~MainWindow() {}
@@ -35,6 +37,12 @@ void MainWindow::setupUI()
     m_autoRegisterBtn = new QPushButton("Auto Register", m_rightControlsWidget);
     m_autoRegisterBtn->setCheckable(true);
 
+    m_datasetCombo = new QComboBox(m_rightControlsWidget);
+    m_datasetCombo->addItems({"SAIFI (Iso: -999)", "Vijaya Upper (Iso: 1)",
+                              "Rajeev Lower (Iso: 1)", "Unknown (Iso: 1)",
+                              "Ashish Upper (Iso: 1)"});
+    // m_datasetCombo->
+
     m_isoSlider = new QSlider(Qt::Horizontal, m_rightControlsWidget);
 
     m_isoSlider->setMinimum(-1000);
@@ -45,6 +53,7 @@ void MainWindow::setupUI()
 
     QVBoxLayout *vLayout = new QVBoxLayout(m_rightControlsWidget);
 
+    vLayout->addWidget(m_datasetCombo);
     vLayout->addWidget(m_autoRegisterBtn);
     vLayout->addWidget(m_isoSlider);
 
@@ -63,8 +72,8 @@ void MainWindow::setupUI()
     m_leftRenderer->SetViewport(leftViewPort);
     m_rightRenderer->SetViewport(rightViewPort);
 
-    m_currentIso = 1;
-    // m_currentIso = -999;
+    // m_currentIso = 1;
+    m_currentIso = -999;
 }
 
 void MainWindow::setupData()
@@ -82,6 +91,7 @@ void MainWindow::setupData()
 */
     // m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(-999));
     m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(m_currentIso));
+    m_dicomSurfaceMapper->ScalarVisibilityOff();
     m_dicomActor->SetMapper(m_dicomSurfaceMapper);
     m_dicomActor->SetProperty(m_regVM->getSurfaceProps());
     m_rightRenderer->AddActor(m_dicomActor);
@@ -89,6 +99,29 @@ void MainWindow::setupData()
     m_leftRenderer->ResetCamera();
     m_rightRenderer->ResetCamera();
 
+    m_renderWindow->Render();
+}
+void MainWindow::onDatasetChanged(int index) {
+    // 1. Tell ViewModel to load new datasets into VTK stream
+    m_regVM->loadTestingDataset(index);
+
+    // 2. Adjust target isovalue dynamically (SAIFI == -999, Others == 1)
+    m_currentIso = (index == 0) ? -999 : 1;
+
+    // Qt Best Practice: Block signals so the slider update doesn't trigger
+    // redundant logic execution
+    m_isoSlider->blockSignals(true);
+    m_isoSlider->setValue(m_currentIso);
+    m_isoSlider->blockSignals(false);
+
+    // 3. Safely swap graphics mapping pointers for the newly extracted VTK
+    // polygon objects
+    m_stlMapper->SetInputData(m_regVM->getStlData());
+    m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(m_currentIso));
+
+    // 4. Force optical realignment due to bounding box changes
+    m_leftRenderer->ResetCamera();
+    m_rightRenderer->ResetCamera();
     m_renderWindow->Render();
 }
 

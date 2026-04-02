@@ -24,6 +24,7 @@
 #include <pcl/search/kdtree.h>
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/surface/mls.h>
 #include <vtkPolyDataConnectivityFilter.h>
 
 #include <algorithm>
@@ -153,18 +154,41 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     }
 
     // ==========================================================
-    // PHASE 1: Center of Mass & Spherical Quarantine (Anti-Ramus)
+    // PHASE 1: The Smoothing Proxy Engine (Solve DICOM Jaggedness)
+    // ==========================================================
+    // 1A: Aggressively merge microscopic voxel steps
+    pcl::PointCloud<pcl::PointXYZ>::Ptr downsampledCloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::VoxelGrid<pcl::PointXYZ> grid;
+    grid.setLeafSize(1.5f, 1.5f, 1.5f);  // Erases standard DICOM staircases
+    grid.setInputCloud(inputCloud);
+    grid.filter(*downsampledCloud);
+
+    // 1B: Moving Least Squares (MLS) - Mathematically sand the bone smooth
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr mls_tree(
+        new pcl::search::KdTree<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr smoothProxy(
+        new pcl::PointCloud<pcl::PointXYZ>());
+
+    pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
+    mls.setComputeNormals(false);
+    mls.setInputCloud(downsampledCloud);
+    mls.setPolynomialOrder(1);  // Linear fit perfectly smooths jaggedness
+    mls.setSearchMethod(mls_tree);
+    mls.setSearchRadius(4.0);  // Blends physics across 4mm overlapping patches
+    mls.process(*smoothProxy);
+
+    // ==========================================================
+    // PHASE 2: Anti-Ramus Quarantine Zone
     // ==========================================================
     Eigen::Vector4f global_centroid;
-    pcl::compute3DCentroid(*inputCloud, global_centroid);
+    pcl::compute3DCentroid(*smoothProxy, global_centroid);
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr coreCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
-    // Universal Biological Constant: 45mm sphere perfectly captures the
-    // anterior arch (Incisors to Premolars) but physically locks out the Ramus.
-    float coreRadiusSq = 45.0f * 45.0f;
+    float coreRadiusSq = 45.0f * 45.0f;  // Excludes the posterior ramus
 
-    for (const auto& pt : inputCloud->points) {
+    for (const auto& pt : smoothProxy->points) {
         float distSq =
             (pt.x - global_centroid.x()) * (pt.x - global_centroid.x()) +
             (pt.y - global_centroid.y()) * (pt.y - global_centroid.y()) +
@@ -174,25 +198,20 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
             coreCloud->points.push_back(pt);
         }
     }
-
-    // Safety fallback for extremely tiny, malformed models
     if (coreCloud->points.size() < 100) {
-        coreCloud = inputCloud;
+        coreCloud = smoothProxy;
     }
 
     // ==========================================================
-    // PHASE 2: Low-Pass Roughness Isolation (Anti-Voxel)
+    // PHASE 3: Curvature Measurement on the Healed Surface
     // ==========================================================
     pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::PointNormal> ne;
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
         new pcl::search::KdTree<pcl::PointXYZ>());
     ne.setInputCloud(coreCloud);
     ne.setSearchMethod(tree);
+    ne.setRadiusSearch(4.0);
 
-    // INCREASED to 6.0mm. Averages out microscopic DICOM staircases into
-    // 0-curvature, ensuring ONLY true macro-protrusions (Teeth) return high
-    // curvature.
-    ne.setRadiusSearch(6.0);
     pcl::PointCloud<pcl::PointNormal>::Ptr normals(
         new pcl::PointCloud<pcl::PointNormal>());
     ne.compute(*normals);
@@ -200,18 +219,18 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     pcl::PointCloud<pcl::PointXYZ>::Ptr roughCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
     for (size_t i = 0; i < coreCloud->points.size(); ++i) {
-        if (normals->points[i].curvature >
-            0.03) {  // Lenient threshold for 6mm scale
+        // Because the bone is now mathematically "glass", this threshold
+        // aggressively identifies ONLY true, sharp teeth cusps.
+        if (normals->points[i].curvature > 0.04) {
             roughCloud->points.push_back(coreCloud->points[i]);
         }
     }
-
     if (roughCloud->points.size() < 100) {
         roughCloud = coreCloud;
     }
 
     // ==========================================================
-    // PHASE 3: RANSAC Occlusal Plane Discovery
+    // PHASE 4: RANSAC Occlusal Plane Discovery
     // ==========================================================
     pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
     pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
@@ -220,7 +239,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     seg.setOptimizeCoefficients(true);
     seg.setModelType(pcl::SACMODEL_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setDistanceThreshold(4.0);
+    seg.setDistanceThreshold(3.0);
     seg.setMaxIterations(1000);
     seg.setInputCloud(roughCloud);
     seg.segment(*inliers, *coefficients);
@@ -231,7 +250,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     }
 
     // ==========================================================
-    // PHASE 4: Global Tilt Eradication
+    // PHASE 5: Global Tilt Eradication (Applied to Original Cloud)
     // ==========================================================
     Eigen::Vector3f plane_normal(coefficients->values[0],
                                  coefficients->values[1],
@@ -256,32 +275,29 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
         -1.0f *
         (transform_to_canonical.block<3, 3>(0, 0) * plane_centroid.head<3>());
 
-    // IMPORTANT: Transform the ENTIRE inputCloud, not just the cropped core
-    // sphere. This perfectly centers all molars, incisors, and root mass at
-    // exactly Z=0.
+    // VERY IMPORTANT: Apply the calculated matrix to the unsmoothed inputCloud!
     pcl::PointCloud<pcl::PointXYZ>::Ptr leveledCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
     pcl::transformPointCloud(*inputCloud, *leveledCloud,
                              transform_to_canonical);
 
     // ==========================================================
-    // PHASE 5: Gravity Polarity Enforcement
+    // PHASE 6: Gravity Polarity Enforcement
     // ==========================================================
     Eigen::Vector4f full_centroid;
     pcl::compute3DCentroid(*leveledCloud, full_centroid);
 
     if (full_centroid.z() > 0) {
         Eigen::Matrix4f flip = Eigen::Matrix4f::Identity();
-        flip(1, 1) = -1.0f;  // Invert Y
-        flip(2, 2) =
-            -1.0f;  // Invert Z (Flips bone down, forces teeth up to +Z)
+        flip(1, 1) = -1.0f;
+        flip(2, 2) = -1.0f;
         transform_to_canonical = flip * transform_to_canonical;
         pcl::transformPointCloud(*inputCloud, *leveledCloud,
                                  transform_to_canonical);
     }
 
     // ==========================================================
-    // PHASE 6: Surgical Crown Extractor
+    // PHASE 7: Pristine Anatomical Crown Extractor
     // ==========================================================
     pcl::PointXYZ minPt, maxPt;
     pcl::getMinMax3D(*leveledCloud, minPt, maxPt);
@@ -290,7 +306,6 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     pass.setInputCloud(leveledCloud);
     pass.setFilterFieldName("z");
 
-    // Slice exactly 12mm downward from the absolute maximum peak.
     float safeCrownHeight =
         extractionThickness > 0.1f ? extractionThickness : 12.0f;
     pass.setFilterLimits(maxPt.z - safeCrownHeight, maxPt.z + 1.0f);
@@ -299,17 +314,10 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
         new pcl::PointCloud<pcl::PointXYZ>());
     pass.filter(*leveledCrowns);
 
-    // ==========================================================
-    // PHASE 7: Coordinate Restoration
-    // ==========================================================
     pcl::PointCloud<pcl::PointXYZ>::Ptr finalWorldCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
     pcl::transformPointCloud(*leveledCrowns, *finalWorldCloud,
                              transform_to_canonical.inverse());
-
-    qDebug() << "=== Core-Isolated Semantic Extraction ===";
-    qDebug() << "Original CBCT/STL Points:" << inputCloud->points.size();
-    qDebug() << "Surgically Severed Crowns:" << finalWorldCloud->points.size();
 
     return finalWorldCloud;
 }

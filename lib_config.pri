@@ -96,6 +96,7 @@ LIBS +=     \
     -lpcl_filters \
     -lpcl_registration \
     -lpcl_io \
+    -lpcl_surface \
     -lflann_cpp_s
 
 LIBS += -lpcl_common \

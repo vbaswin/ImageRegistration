@@ -32,6 +32,8 @@
 #include <queue>
 #include <vector>
 
+#include "itk_volumemath.h"
+
 RegistrationModel::RegistrationModel(QObject *parent)
     : QObject{parent}
 {}
@@ -680,4 +682,12 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
                               fineSourceNormals, fineTargetNormals,
                               ransacTransform);
     return absoluteLockedTransform;
+}
+vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeVolumetricTransform(
+    vtkSmartPointer<vtkPolyData> sourceStl,
+    vtkSmartPointer<vtkImageData> targetCbct) {
+    // Pass execution across the compiler barrier to the insulated ITK
+    // Translation Unit
+    return ITKVolumeMath::executeDistanceFieldRegistration(sourceStl,
+                                                           targetCbct);
 }

@@ -36,11 +36,12 @@ vtkSmartPointer<vtkProperty> RegisterViewModel::getSurfaceProps()
 
 vtkSmartPointer<vtkMatrix4x4> RegisterViewModel::performRegistration(double isoValue)
 {
-    // qDebug() << "Inside p"
     vtkSmartPointer<vtkPolyData> sourceStl = getStlData();
-    vtkSmartPointer<vtkPolyData> targetSurface = getSurfaceData(isoValue);
+    // vtkSmartPointer<vtkPolyData> targetSurface = getSurfaceData(isoValue);
+    vtkSmartPointer<vtkImageData> targetVolume = m_dataLoader->getDicomData();
 
-    return m_regModel->computeTransform(sourceStl, targetSurface);
+    // return m_regModel->computeTransform(sourceStl, targetSurface);
+    return m_regModel->computeVolumetricTransform(sourceStl, targetVolume);
 }
 
 void RegisterViewModel::loadTestingDataset(int index) {

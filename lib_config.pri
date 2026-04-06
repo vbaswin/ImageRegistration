@@ -62,6 +62,8 @@ LIBS += \
 -lvtkRenderingVolumeOpenGL2-8.2 \
 -lvtkImagingHybrid-8.2 \
 -lvtkIOGeometry-8.2 \
+-lvtkFiltersGeneral-8.2 \
+-lvtkFiltersHybrid-8.2 \
 -ladvapi32
 
 # --- vtkDICOM 0.8.13 (MSVC 2019-compatible x64 build) ---
@@ -107,3 +109,42 @@ LIBS += -lpcl_common \
 # ***** forces to use 32  bit alignment but pre-built pcl uses 16 bits
 # cauisng crashes
 # QMAKE_CXXFLAGS += /arch:AVX2
+
+# -----------------------------------------------------------------------------
+# --- ITK 5.4 Integration (Volumetric Distance-Field Registration) ---
+# -----------------------------------------------------------------------------
+# FIXED PATH: Pointing exactly to the Release directory where the binaries exist
+ITK_INSTALL = C:/Users/igrs/Desktop/Aswin/ext_libs/ITK-5.4.5/Release
+
+INCLUDEPATH += $$ITK_INSTALL/include/ITK-5.4
+DEPENDPATH  += $$ITK_INSTALL/include/ITK-5.4
+QMAKE_LIBDIR += $$ITK_INSTALL/lib
+
+# ITK 5.4 Base Engine
+LIBS += \
+-lITKCommon-5.4 \
+-litksys-5.4 \
+-lITKVNLInstantiation-5.4 \
+-litkvnl-5.4 \
+-litkvnl_algo-5.4 \
+-litkv3p_netlib-5.4 \
+-litkNetlibSlatec-5.4 \
+-lITKSmoothing-5.4 \
+-lITKStatistics-5.4
+
+
+
+# ITK 5.4 Volumetric Registration Core
+LIBS += \
+-lITKRegistrationMethodsv4-5.4 \
+-lITKOptimizersv4-5.4 \
+-lITKTransform-5.4 \
+-lITKTransformFactory-5.4 \
+-lITKSpatialObjects-5.4
+
+# ITK 5.4 Distance Maps and VTK Memory Bridge
+LIBS += \
+-lITKVTK-5.4 \
+-lITKVtkGlue-5.4
+
+

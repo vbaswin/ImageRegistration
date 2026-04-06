@@ -10,6 +10,8 @@
 #include <QDebug>
 #include <QObject>
 
+#include "RegistrationBridge.h"
+
 class RegistrationModel : public QObject {
     Q_OBJECT
 public:
@@ -18,6 +20,9 @@ public:
     vtkSmartPointer<vtkMatrix4x4> computeTransform(
         vtkSmartPointer<vtkPolyData> sourceStl,
         vtkSmartPointer<vtkPolyData> targetSurface);
+    vtkSmartPointer<vtkMatrix4x4> computeVolumetricTransform(
+        vtkSmartPointer<vtkPolyData> sourceStl,
+        vtkSmartPointer<vtkImageData> targetCbct);
 
    private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr applyMorphologicalClosing(

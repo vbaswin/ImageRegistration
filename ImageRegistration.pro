@@ -11,13 +11,16 @@ include(./lib_config.pri)
 
 SOURCES += \
     dataloader.cpp \
+    itk_volumemath.cpp \
     main.cpp \
     mainwindow.cpp \
     registerviewmodel.cpp \
     registrationmodel.cpp
 
 HEADERS += \
+    RegistrationBridge.h \
     dataloader.h \
+    itk_volumemath.h \
     mainwindow.h \
     registerviewmodel.h \
     registrationmodel.h

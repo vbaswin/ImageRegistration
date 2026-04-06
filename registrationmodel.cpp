@@ -1,7 +1,6 @@
 // #include <cmath>
 // #include <unordered_map>
 // #include <utility>
-
 #include "registrationmodel.h"
 
 #include <pcl/common/common.h>
@@ -28,7 +27,10 @@
 #include <vtkPolyDataConnectivityFilter.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <pcl/filters/impl/extract_indices.hpp>
+#include <queue>
+#include <vector>
 
 RegistrationModel::RegistrationModel(QObject *parent)
     : QObject{parent}
@@ -145,6 +147,147 @@ struct GridHash
         return h1 ^ (h2 << 1);
     }
 };
+
+pcl::PointCloud<pcl::PointXYZ>::Ptr
+RegistrationModel::applyMorphologicalClosing(
+    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float closingRadius,
+    float voxelResolution) {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr outputCloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    if (!inputCloud || inputCloud->empty()) return outputCloud;
+
+    // 1. Establish the bounding box of the jawbone
+    Eigen::Vector4f minPt, maxPt;
+    pcl::getMinMax3D(*inputCloud, minPt, maxPt);
+
+    int pad = static_cast<int>(std::ceil(closingRadius / voxelResolution)) + 2;
+    int w = static_cast<int>((maxPt.x() - minPt.x()) / voxelResolution) +
+            (2 * pad) + 1;
+    int h = static_cast<int>((maxPt.y() - minPt.y()) / voxelResolution) +
+            (2 * pad) + 1;
+    int d = static_cast<int>((maxPt.z() - minPt.z()) / voxelResolution) +
+            (2 * pad) + 1;
+
+    size_t totalVoxels = static_cast<size_t>(w) * static_cast<size_t>(h) *
+                         static_cast<size_t>(d);
+
+    if (totalVoxels > 100000000) {
+        qWarning() << "Voxel Grid resolution too tight! Aborting morphological "
+                      "operations.";
+        return inputCloud;
+    }
+
+    // [MSVC FIX]: Explicitly scoped constants prevent Windows API 'EMPTY'
+    // collisions
+    const uint8_t VS_EMPTY = 0;
+    const uint8_t VS_OCCUPIED = 1;
+    const uint8_t VS_DILATED = 2;
+    const uint8_t VS_EXTERIOR = 3;
+
+    std::vector<uint8_t> grid(totalVoxels, VS_EMPTY);
+
+    // [SYNTAX FIX]: The rogue '<' and '>' brackets have been removed from these
+    // lambdas
+    auto idx = [&](int x, int y, int z) -> size_t {
+        return static_cast<size_t>(z) * w * h + static_cast<size_t>(y) * w + x;
+    };
+
+    auto posToGrid = [&](const pcl::PointXYZ& pt) -> Eigen::Vector3i {
+        return Eigen::Vector3i(
+            static_cast<int>((pt.x - minPt.x()) / voxelResolution) + pad,
+            static_cast<int>((pt.y - minPt.y()) / voxelResolution) + pad,
+            static_cast<int>((pt.z - minPt.z()) / voxelResolution) + pad);
+    };
+
+    // 2. Map Original points strictly into the Grid
+    std::vector<Eigen::Vector3i> occupiedList;
+    occupiedList.reserve(inputCloud->points.size());
+    for (const auto& pt : inputCloud->points) {
+        auto v = posToGrid(pt);
+        grid[idx(v.x(), v.y(), v.z())] = VS_OCCUPIED;
+        occupiedList.push_back(v);
+    }
+
+    // 3. STEP 1: DILATION (Swell the Dough to pinch holes)
+    int radiusVoxel =
+        static_cast<int>(std::ceil(closingRadius / voxelResolution));
+    for (const auto& v : occupiedList) {
+        for (int dx = -radiusVoxel; dx <= radiusVoxel; ++dx) {
+            for (int dy = -radiusVoxel; dy <= radiusVoxel; ++dy) {
+                for (int dz = -radiusVoxel; dz <= radiusVoxel; ++dz) {
+                    if (dx * dx + dy * dy + dz * dz <=
+                        radiusVoxel * radiusVoxel) {
+                        int nx = v.x() + dx, ny = v.y() + dy, nz = v.z() + dz;
+                        if (nx >= 0 && nx < w && ny >= 0 && ny < h && nz >= 0 &&
+                            nz < d) {
+                            if (grid[idx(nx, ny, nz)] == VS_EMPTY) {
+                                grid[idx(nx, ny, nz)] = VS_DILATED;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. STEP 2: FLOOD FILL (Pour the blue paint from corner [0,0,0])
+    std::queue<Eigen::Vector3i> q;
+    q.push(Eigen::Vector3i(0, 0, 0));
+    grid[idx(0, 0, 0)] = VS_EXTERIOR;
+
+    int dirs[6][3] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                      {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+    while (!q.empty()) {
+        auto curr = q.front();
+        q.pop();
+
+        for (auto dir : dirs) {
+            int nx = curr.x() + dir[0];
+            int ny = curr.y() + dir[1];
+            int nz = curr.z() + dir[2];
+
+            if (nx >= 0 && nx < w && ny >= 0 && ny < h && nz >= 0 && nz < d) {
+                if (grid[idx(nx, ny, nz)] == VS_EMPTY) {
+                    grid[idx(nx, ny, nz)] = VS_EXTERIOR;
+                    q.push(Eigen::Vector3i(nx, ny, nz));
+                }
+            }
+        }
+    }
+
+    // 5. STEP 3: EROSION & EXTRACTION
+    int searchRadius = radiusVoxel + 1;
+    for (size_t i = 0; i < inputCloud->points.size(); ++i) {
+        auto v = occupiedList[i];
+        bool touchesExterior = false;
+
+        for (int dx = -searchRadius; dx <= searchRadius && !touchesExterior;
+             ++dx) {
+            for (int dy = -searchRadius; dy <= searchRadius && !touchesExterior;
+                 ++dy) {
+                for (int dz = -searchRadius;
+                     dz <= searchRadius && !touchesExterior; ++dz) {
+                    int nx = v.x() + dx, ny = v.y() + dy, nz = v.z() + dz;
+                    if (nx >= 0 && nx < w && ny >= 0 && ny < h && nz >= 0 &&
+                        nz < d) {
+                        if (grid[idx(nx, ny, nz)] == VS_EXTERIOR) {
+                            touchesExterior = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (touchesExterior) {
+            outputCloud->points.push_back(inputCloud->points[i]);
+        }
+    }
+
+    outputCloud->width = outputCloud->points.size();
+    outputCloud->height = 1;
+    return outputCloud;
+}
+
 pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool isFullJaw,
     float extractionThickness) {
@@ -154,39 +297,43 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     }
 
     // ==========================================================
-    // PHASE 1: The Smoothing Proxy Engine (Solve DICOM Jaggedness)
+    // PHASE 1: Modality-Tuned Processing
     // ==========================================================
-    // 1A: Aggressively merge microscopic voxel steps
+    // CBCT gets aggressive 1.5mm sanding; STL gets high-fidelity 1.0mm
+    // downsampling
+    float leafParam = isFullJaw ? 1.5f : 1.0f;
+
     pcl::PointCloud<pcl::PointXYZ>::Ptr downsampledCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
     pcl::VoxelGrid<pcl::PointXYZ> grid;
-    grid.setLeafSize(1.5f, 1.5f, 1.5f);  // Erases standard DICOM staircases
+    grid.setLeafSize(leafParam, leafParam, leafParam);
     grid.setInputCloud(inputCloud);
     grid.filter(*downsampledCloud);
 
-    // 1B: Moving Least Squares (MLS) - Mathematically sand the bone smooth
     pcl::search::KdTree<pcl::PointXYZ>::Ptr mls_tree(
         new pcl::search::KdTree<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr smoothProxy(
         new pcl::PointCloud<pcl::PointXYZ>());
-
     pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
     mls.setComputeNormals(false);
     mls.setInputCloud(downsampledCloud);
-    mls.setPolynomialOrder(1);  // Linear fit perfectly smooths jaggedness
+    mls.setPolynomialOrder(1);
     mls.setSearchMethod(mls_tree);
-    mls.setSearchRadius(4.0);  // Blends physics across 4mm overlapping patches
+    mls.setSearchRadius(isFullJaw ? 4.0 : 1.5);
     mls.process(*smoothProxy);
 
     // ==========================================================
-    // PHASE 2: Anti-Ramus Quarantine Zone
+    // PHASE 2: The "Disposable Compass" Quarantine
     // ==========================================================
-    Eigen::Vector4f global_centroid;
-    pcl::compute3DCentroid(*smoothProxy, global_centroid);
-
+    // We apply this to BOTH STL and CBCT. It safely amputates ramus hinges and
+    // ragged STL palate borders, giving RANSAC a pristine U-shaped front arch
+    // to aim at.
     pcl::PointCloud<pcl::PointXYZ>::Ptr coreCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
-    float coreRadiusSq = 45.0f * 45.0f;  // Excludes the posterior ramus
+
+    Eigen::Vector4f global_centroid;
+    pcl::compute3DCentroid(*smoothProxy, global_centroid);
+    float coreRadiusSq = 45.0f * 45.0f;
 
     for (const auto& pt : smoothProxy->points) {
         float distSq =
@@ -199,18 +346,18 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
         }
     }
     if (coreCloud->points.size() < 100) {
-        coreCloud = smoothProxy;
+        coreCloud = smoothProxy;  // Failsafe
     }
 
     // ==========================================================
-    // PHASE 3: Curvature Measurement on the Healed Surface
+    // PHASE 3: Curvature & RANSAC Plane Target Lock
     // ==========================================================
     pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::PointNormal> ne;
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
         new pcl::search::KdTree<pcl::PointXYZ>());
     ne.setInputCloud(coreCloud);
     ne.setSearchMethod(tree);
-    ne.setRadiusSearch(4.0);
+    ne.setRadiusSearch(isFullJaw ? 4.0 : 2.0);
 
     pcl::PointCloud<pcl::PointNormal>::Ptr normals(
         new pcl::PointCloud<pcl::PointNormal>());
@@ -218,20 +365,15 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr roughCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
+    float curveThreshold = isFullJaw ? 0.04f : 0.02f;
+
     for (size_t i = 0; i < coreCloud->points.size(); ++i) {
-        // Because the bone is now mathematically "glass", this threshold
-        // aggressively identifies ONLY true, sharp teeth cusps.
-        if (normals->points[i].curvature > 0.04) {
+        if (normals->points[i].curvature > curveThreshold) {
             roughCloud->points.push_back(coreCloud->points[i]);
         }
     }
-    if (roughCloud->points.size() < 100) {
-        roughCloud = coreCloud;
-    }
+    if (roughCloud->points.size() < 100) roughCloud = coreCloud;
 
-    // ==========================================================
-    // PHASE 4: RANSAC Occlusal Plane Discovery
-    // ==========================================================
     pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
     pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
 
@@ -250,7 +392,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     }
 
     // ==========================================================
-    // PHASE 5: Global Tilt Eradication (Applied to Original Cloud)
+    // PHASE 4: Level the FULL Original Cloud
     // ==========================================================
     Eigen::Vector3f plane_normal(coefficients->values[0],
                                  coefficients->values[1],
@@ -275,21 +417,24 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
         -1.0f *
         (transform_to_canonical.block<3, 3>(0, 0) * plane_centroid.head<3>());
 
-    // VERY IMPORTANT: Apply the calculated matrix to the unsmoothed inputCloud!
     pcl::PointCloud<pcl::PointXYZ>::Ptr leveledCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
+    // Applying the perfect RANSAC compass matrix to the ORIGINAl RAW cloud
+    // (molars are safe!)
     pcl::transformPointCloud(*inputCloud, *leveledCloud,
                              transform_to_canonical);
 
     // ==========================================================
-    // PHASE 6: Gravity Polarity Enforcement
+    // PHASE 5: Center of Mass Gravity Polarity
     // ==========================================================
     Eigen::Vector4f full_centroid;
     pcl::compute3DCentroid(*leveledCloud, full_centroid);
 
+    // Because the roots and heavy gums dictate the true center of mass,
+    // it will naturally sit below the Z=0 plane. If it's > 0, it's upside down.
     if (full_centroid.z() > 0) {
         Eigen::Matrix4f flip = Eigen::Matrix4f::Identity();
-        flip(1, 1) = -1.0f;
+        flip(1, 1) = -1.0f;  // Flipper preserving Handedness
         flip(2, 2) = -1.0f;
         transform_to_canonical = flip * transform_to_canonical;
         pcl::transformPointCloud(*inputCloud, *leveledCloud,
@@ -297,7 +442,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     }
 
     // ==========================================================
-    // PHASE 7: Pristine Anatomical Crown Extractor
+    // PHASE 6: Pristine Anatomical Crown Extractor
     // ==========================================================
     pcl::PointXYZ minPt, maxPt;
     pcl::getMinMax3D(*leveledCloud, minPt, maxPt);
@@ -306,8 +451,11 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     pass.setInputCloud(leveledCloud);
     pass.setFilterFieldName("z");
 
-    float safeCrownHeight =
-        extractionThickness > 0.1f ? extractionThickness : 12.0f;
+    // CBCTs need a deeper bite (12mm) to clear the jawbone edge. STLs only need
+    // crowns (8mm).
+    float safeCrownHeight = extractionThickness > 0.1f
+                                ? extractionThickness
+                                : (isFullJaw ? 12.0f : 8.0f);
     pass.setFilterLimits(maxPt.z - safeCrownHeight, maxPt.z + 1.0f);
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr leveledCrowns(
@@ -320,42 +468,6 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
                              transform_to_canonical.inverse());
 
     return finalWorldCloud;
-}
-
-// ==========================================================
-// UTILITY: Disconnected Artifact Cleanup
-// ==========================================================
-pcl::PointCloud<pcl::PointXYZ>::Ptr
-RegistrationModel::removeDisconnectedArtifacts(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud) {
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
-        new pcl::search::KdTree<pcl::PointXYZ>());
-    tree->setInputCloud(inputCloud);
-
-    std::vector<pcl::PointIndices> clusterIndices;
-    pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-
-    // ec.setClusterTolerance(2.0);  // A physical gap of 2mm severs a cluster
-    ec.setClusterTolerance(15.0);  // A physical gap of 2mm severs a cluster
-    ec.setMinClusterSize(50);      // Ignore microscopic noise
-    ec.setMaxClusterSize(inputCloud->points.size());
-    ec.setSearchMethod(tree);
-    ec.setInputCloud(inputCloud);
-    ec.extract(clusterIndices);
-
-    if (clusterIndices.empty()) return inputCloud;
-
-    // PCL automatically sorts clusters by descending size.
-    // Cluster 0 is mathematically guaranteed to be our continuous dental arch.
-    pcl::PointCloud<pcl::PointXYZ>::Ptr purifiedCloud(
-        new pcl::PointCloud<pcl::PointXYZ>());
-    for (const auto& idx : clusterIndices[0].indices) {
-        purifiedCloud->points.push_back(inputCloud->points[idx]);
-    }
-
-    qDebug() << "Artifact Cleanup: Obliterated" << (clusterIndices.size() - 1)
-             << "disconnected ghost artifacts.";
-    return purifiedCloud;
 }
 
 // ==========================================================
@@ -480,8 +592,18 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         return transform;
     }
 
+    qDebug() << "sealing internals";
+    float closingRadius = 3.0f;
+    float morphRes = 0.5f;
+
+    auto solidTarget =
+        applyMorphologicalClosing(pclTarget, closingRadius, morphRes);
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/solid_target.ply",
+        *solidTarget);
+
     auto croppedSource = extractTeethRegion(pclSource, false, 8.0f);
-    auto croppedTarget = extractTeethRegion(pclTarget, true, 8.0f);
+    auto croppedTarget = extractTeethRegion(solidTarget, true, 8.0f);
     pcl::io::savePLYFileASCII(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
         *croppedSource);

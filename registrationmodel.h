@@ -20,6 +20,9 @@ public:
         vtkSmartPointer<vtkPolyData> targetSurface);
 
    private:
+    pcl::PointCloud<pcl::PointXYZ>::Ptr applyMorphologicalClosing(
+        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float closingRadius,
+        float voxelResolution);
     pcl::PointCloud<pcl::PointXYZ>::Ptr extractTeethRegion(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, bool, float);
 
@@ -40,8 +43,6 @@ public:
         pcl::PointCloud<pcl::FPFHSignature33>::Ptr targetFeatures,
         float maxCorrespondenceDistance);
 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr removeDisconnectedArtifacts(
-        pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud);
     vtkSmartPointer<vtkMatrix4x4> performICPWithNormals(
         pcl::PointCloud<pcl::PointNormal>::Ptr coarseSourceNormals,
         pcl::PointCloud<pcl::PointNormal>::Ptr coarseTargetNormals,

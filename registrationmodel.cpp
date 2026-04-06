@@ -156,7 +156,6 @@ RegistrationModel::applyMorphologicalClosing(
         new pcl::PointCloud<pcl::PointXYZ>());
     if (!inputCloud || inputCloud->empty()) return outputCloud;
 
-    // 1. Establish the bounding box of the jawbone
     Eigen::Vector4f minPt, maxPt;
     pcl::getMinMax3D(*inputCloud, minPt, maxPt);
 
@@ -168,28 +167,23 @@ RegistrationModel::applyMorphologicalClosing(
     int d = static_cast<int>((maxPt.z() - minPt.z()) / voxelResolution) +
             (2 * pad) + 1;
 
-    size_t totalVoxels = static_cast<size_t>(w) * static_cast<size_t>(h) *
-                         static_cast<size_t>(d);
-
-    if (totalVoxels > 100000000) {
+    if (static_cast<size_t>(w) * h * d > 100000000) {
         qWarning() << "Voxel Grid resolution too tight! Aborting morphological "
                       "operations.";
         return inputCloud;
     }
 
-    // [MSVC FIX]: Explicitly scoped constants prevent Windows API 'EMPTY'
-    // collisions
-    const uint8_t VS_EMPTY = 0;
-    const uint8_t VS_OCCUPIED = 1;
-    const uint8_t VS_DILATED = 2;
-    const uint8_t VS_EXTERIOR = 3;
+    // [MSVC COMPILER FIX]: Using strictly prefixed constexpr memory instead of
+    // unscoped enums
+    const uint8_t VOX_EMPTY = 0;
+    const uint8_t VOX_OCCUPIED = 1;
+    const uint8_t VOX_DILATED = 2;
+    const uint8_t VOX_EXTERIOR = 3;
 
-    std::vector<uint8_t> grid(totalVoxels, VS_EMPTY);
+    std::vector<uint8_t> grid(w * h * d, VOX_EMPTY);
 
-    // [SYNTAX FIX]: The rogue '<' and '>' brackets have been removed from these
-    // lambdas
     auto idx = [&](int x, int y, int z) -> size_t {
-        return static_cast<size_t>(z) * w * h + static_cast<size_t>(y) * w + x;
+        return static_cast<size_t>(z * w * h + y * w + x);
     };
 
     auto posToGrid = [&](const pcl::PointXYZ& pt) -> Eigen::Vector3i {
@@ -199,16 +193,15 @@ RegistrationModel::applyMorphologicalClosing(
             static_cast<int>((pt.z - minPt.z()) / voxelResolution) + pad);
     };
 
-    // 2. Map Original points strictly into the Grid
     std::vector<Eigen::Vector3i> occupiedList;
     occupiedList.reserve(inputCloud->points.size());
     for (const auto& pt : inputCloud->points) {
         auto v = posToGrid(pt);
-        grid[idx(v.x(), v.y(), v.z())] = VS_OCCUPIED;
+        grid[idx(v.x(), v.y(), v.z())] = VOX_OCCUPIED;
         occupiedList.push_back(v);
     }
 
-    // 3. STEP 1: DILATION (Swell the Dough to pinch holes)
+    // STEP 1: DILATION
     int radiusVoxel =
         static_cast<int>(std::ceil(closingRadius / voxelResolution));
     for (const auto& v : occupiedList) {
@@ -220,8 +213,8 @@ RegistrationModel::applyMorphologicalClosing(
                         int nx = v.x() + dx, ny = v.y() + dy, nz = v.z() + dz;
                         if (nx >= 0 && nx < w && ny >= 0 && ny < h && nz >= 0 &&
                             nz < d) {
-                            if (grid[idx(nx, ny, nz)] == VS_EMPTY) {
-                                grid[idx(nx, ny, nz)] = VS_DILATED;
+                            if (grid[idx(nx, ny, nz)] == VOX_EMPTY) {
+                                grid[idx(nx, ny, nz)] = VOX_DILATED;
                             }
                         }
                     }
@@ -230,10 +223,10 @@ RegistrationModel::applyMorphologicalClosing(
         }
     }
 
-    // 4. STEP 2: FLOOD FILL (Pour the blue paint from corner [0,0,0])
+    // STEP 2: FLOOD FILL
     std::queue<Eigen::Vector3i> q;
     q.push(Eigen::Vector3i(0, 0, 0));
-    grid[idx(0, 0, 0)] = VS_EXTERIOR;
+    grid[idx(0, 0, 0)] = VOX_EXTERIOR;
 
     int dirs[6][3] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
                       {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
@@ -247,15 +240,15 @@ RegistrationModel::applyMorphologicalClosing(
             int nz = curr.z() + dir[2];
 
             if (nx >= 0 && nx < w && ny >= 0 && ny < h && nz >= 0 && nz < d) {
-                if (grid[idx(nx, ny, nz)] == VS_EMPTY) {
-                    grid[idx(nx, ny, nz)] = VS_EXTERIOR;
+                if (grid[idx(nx, ny, nz)] == VOX_EMPTY) {
+                    grid[idx(nx, ny, nz)] = VOX_EXTERIOR;
                     q.push(Eigen::Vector3i(nx, ny, nz));
                 }
             }
         }
     }
 
-    // 5. STEP 3: EROSION & EXTRACTION
+    // STEP 3: STRICT SPHERICAL EXTRACTION
     int searchRadius = radiusVoxel + 1;
     for (size_t i = 0; i < inputCloud->points.size(); ++i) {
         auto v = occupiedList[i];
@@ -267,11 +260,15 @@ RegistrationModel::applyMorphologicalClosing(
                  ++dy) {
                 for (int dz = -searchRadius;
                      dz <= searchRadius && !touchesExterior; ++dz) {
-                    int nx = v.x() + dx, ny = v.y() + dy, nz = v.z() + dz;
-                    if (nx >= 0 && nx < w && ny >= 0 && ny < h && nz >= 0 &&
-                        nz < d) {
-                        if (grid[idx(nx, ny, nz)] == VS_EXTERIOR) {
-                            touchesExterior = true;
+                    // Precision Sphere Math applied here
+                    if (dx * dx + dy * dy + dz * dz <=
+                        searchRadius * searchRadius) {
+                        int nx = v.x() + dx, ny = v.y() + dy, nz = v.z() + dz;
+                        if (nx >= 0 && nx < w && ny >= 0 && ny < h && nz >= 0 &&
+                            nz < d) {
+                            if (grid[idx(nx, ny, nz)] == VOX_EXTERIOR) {
+                                touchesExterior = true;
+                            }
                         }
                     }
                 }

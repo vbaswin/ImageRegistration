@@ -422,16 +422,30 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
                              transform_to_canonical);
 
     // ==========================================================
-    // PHASE 5: Center of Mass Gravity Polarity
+    // PHASE 5: Center of Mass Gravity Polarity (Density-Immunized)
     // ==========================================================
-    Eigen::Vector4f full_centroid;
-    pcl::compute3DCentroid(*leveledCloud, full_centroid);
 
-    // Because the roots and heavy gums dictate the true center of mass,
-    // it will naturally sit below the Z=0 plane. If it's > 0, it's upside down.
-    if (full_centroid.z() > 0) {
+    // High-resolution teeth surfaces create immense point density, artificially
+    // dragging the centroid towards Z=0 and blinding the polarity check to the
+    // massive palate roof. We apply spatial normalization (Voxel Grid) to
+    // ensure sheer anatomical volume dictates gravity.
+    pcl::PointCloud<pcl::PointXYZ>::Ptr balancedCloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::VoxelGrid<pcl::PointXYZ> densityBalancer;
+    densityBalancer.setLeafSize(5.0f, 5.0f, 5.0f);
+    densityBalancer.setInputCloud(leveledCloud);
+    densityBalancer.filter(*balancedCloud);
+
+    Eigen::Vector4f rigid_centroid;
+    pcl::compute3DCentroid(*balancedCloud, rigid_centroid);
+
+    // Because the roots/palate vault dictate the true volumetric center of
+    // mass, if rigid_centroid > 0, the jawbone is pointing UP (Maxillary
+    // Anatomy).
+    if (rigid_centroid.z() > 0) {
         Eigen::Matrix4f flip = Eigen::Matrix4f::Identity();
-        flip(1, 1) = -1.0f;  // Flipper preserving Handedness
+        flip(1, 1) =
+            -1.0f;  // Flipper preserving Right-Handedness mathematically
         flip(2, 2) = -1.0f;
         transform_to_canonical = flip * transform_to_canonical;
         pcl::transformPointCloud(*inputCloud, *leveledCloud,
@@ -441,29 +455,27 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     // ==========================================================
     // PHASE 6: Pristine Anatomical Crown Extractor
     // ==========================================================
-    pcl::PointXYZ minPt, maxPt;
-    pcl::getMinMax3D(*leveledCloud, minPt, maxPt);
-
     pcl::PassThrough<pcl::PointXYZ> pass;
     pass.setInputCloud(leveledCloud);
     pass.setFilterFieldName("z");
-
     // CBCTs need a deeper bite (12mm) to clear the jawbone edge. STLs only need
     // crowns (8mm).
     float safeCrownHeight = extractionThickness > 0.1f
                                 ? extractionThickness
                                 : (isFullJaw ? 12.0f : 8.0f);
-    pass.setFilterLimits(maxPt.z - safeCrownHeight, maxPt.z + 1.0f);
-
+    // FIXED: The Occlusal plane was already leveled to exactly Z = 0.
+    // The roots/gums project downwards into negative Z.
+    // We statically extract relative to Z=0 to prevent jaw hinges (condyles)
+    // from hijacking the crop box. A +5.0f margin is allowed to include biting
+    // cusps that protrude slightly above the planar fit.
+    pass.setFilterLimits(-safeCrownHeight, 5.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr leveledCrowns(
         new pcl::PointCloud<pcl::PointXYZ>());
     pass.filter(*leveledCrowns);
-
     pcl::PointCloud<pcl::PointXYZ>::Ptr finalWorldCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
     pcl::transformPointCloud(*leveledCrowns, *finalWorldCloud,
                              transform_to_canonical.inverse());
-
     return finalWorldCloud;
 }
 

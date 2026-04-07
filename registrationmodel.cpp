@@ -621,9 +621,9 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         *croppedTarget);
 
     // A. preprocessing stage
-    float voxelLeafSize = 3.0f;
-    float normalRadius = 6.0f;
-    float featureRadius = 12.0f;
+    float voxelLeafSize = 0.8f;
+    float normalRadius = 2.0f;
+    float featureRadius = 4.5f;
 
     auto sourceDown = downsampleCloud(pclSource, voxelLeafSize);
     auto targetDown = downsampleCloud(croppedTarget, voxelLeafSize);
@@ -660,9 +660,9 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     qDebug() << "Generating high-fidelity point to plane normal map...";
     float highFidelityNormalRadius = 1.5f;
     auto fineSourceNormals =
-        estimateNormals(icpSource, highFidelityNormalRadius);
+        estimateNormals(pclSource, highFidelityNormalRadius);
     auto fineTargetNormals =
-        estimateNormals(icpTarget, highFidelityNormalRadius);
+        estimateNormals(croppedTarget, highFidelityNormalRadius);
 
     // 2. Generate the DECIMATED Macro-Map (Used for High-Speed Magnet
     // alignment)

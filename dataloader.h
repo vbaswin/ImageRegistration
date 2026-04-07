@@ -1,17 +1,20 @@
 #pragma once
-#include <QObject>
-#include "vtkFlyingEdges3D.h"
-#include "vtkSTLReader.h"
 #include <vtkColorTransferFunction.h>
 #include <vtkDICOMDirectory.h>
 #include <vtkDICOMReader.h>
 #include <vtkImageData.h>
+#include <vtkImageThreshold.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkPolyData.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkProperty.h>
 #include <vtkVolumeProperty.h>
 #include <vtkWindowedSincPolyDataFilter.h>
+
+#include <QObject>
+
+#include "vtkFlyingEdges3D.h"
+#include "vtkSTLReader.h"
 
 class DataLoader : public QObject
 {
@@ -50,4 +53,5 @@ private:
     vtkSmartPointer<vtkProperty> m_isoProp;
     vtkNew<vtkWindowedSincPolyDataFilter> m_isoFilter;
     vtkNew<vtkPolyDataNormals> m_normalsCalc;
+    vtkSmartPointer<vtkImageThreshold> m_thresholder;
 };

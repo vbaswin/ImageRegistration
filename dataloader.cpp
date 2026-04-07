@@ -1,12 +1,16 @@
 #include "dataloader.h"
-#include <vtkPolyDataConnectivityFilter.h>
+
 #include <vtkBox.h>
-#include <QDebug>
 #include <vtkClipPolyData.h>
+#include <vtkColorTransferFunction.h>
+#include <vtkPolyDataConnectivityFilter.h>
+#include <vtkStringArray.h>
+
+#include <QDebug>
 #include <QDir>
 #include <QFile>
+
 #include "vtkSmartPointer.h"
-#include <vtkStringArray.h>
 
 // QString testPatientStl = "SAIFI";
 // QString testPatientCbct = "SAIFI/Man_mask";
@@ -135,28 +139,6 @@ bool DataLoader::loadStl(QString &filePath)
 
 bool DataLoader::loadDicom(QString &folderPath)
 {
-    /*
-    m_dicomDir->SetDirectoryName(folderPath.toUtf8().constData());
-    m_dicomDir->Update();
-    if (m_dicomDir->GetNumberOfSeries() == 0) {
-        qDebug() << "No dicom series found in the directory ";
-        return false;
-    } else {
-        qDebug() << "Series found!, no: " << m_dicomDir->GetNumberOfSeries();
-    }
-    vtkStringArray *fileNames = m_dicomDir->GetFileNamesForSeries(2);
-
-    if (!fileNames || fileNames->GetNumberOfValues() == 0) {
-        qWarning() << "Series 0 alloted but 0 files!";
-        return false;
-    } else {
-        qDebug() << "file names no: " << fileNames->GetNumberOfValues();
-    }
-
-    qDebug() << "first file path" << fileNames->GetValue(0).c_str();
-    
-*/
-
     QDir dir(folderPath);
     dir.setNameFilters(QStringList() << "*.dcm" << "*.ima");
     dir.setFilter(QDir::Files | QDir::NoSymLinks);
@@ -182,8 +164,21 @@ bool DataLoader::loadDicom(QString &folderPath)
 
     m_dicomReader->SetFileNames(fileNames);
     m_dicomReader->Update();
-    m_dicomData = m_dicomReader->GetOutput();
-
+    // --- Teeth Isolation Guardrail ---
+    m_thresholder = vtkSmartPointer<vtkImageThreshold>::New();
+    m_thresholder->SetInputConnection(m_dicomReader->GetOutputPort());
+    // Isolate dense structures. (Empirically adjust 1500 for your specific
+    // CBCT calibration)
+    m_thresholder->ThresholdBetween(1500.0, 6000.0);
+    // We replace the outside tissue with -1000 (Air). We keep the inside
+    // teeth
+    // as their original HU values. This prevents severe "staircasing" in
+    // Marching Cubes.
+    m_thresholder->ReplaceOutOn();
+    m_thresholder->SetOutValue(-1000);
+    m_thresholder->Update();
+    // ---------------------------------
+    m_dicomData = m_thresholder->GetOutput();
     double range[2];
     m_dicomData->GetScalarRange(range);
     qDebug() << range[0] << " , " << range[1];
@@ -214,32 +209,34 @@ void DataLoader::loadTestingDataset(int index) {
     switch (index) {
         case 0:
             testPatientStl = "SAIFI";
-            testPatientCbct = "SAIFI/Man_mask";
+            testPatientCbct = "SAIFI/Mandible";
             break;
         case 1:
             testPatientStl = "vijaya upper jaw";
-            testPatientCbct = "vijaya/Max_mask";
+            testPatientCbct = "vijaya/Maxilla";
             break;
         case 2:
             testPatientStl = "rajeev LowerJaw";
-            testPatientCbct = "Rajeev 1 op/Man_mask";
+            testPatientCbct = "Rajeev 1 op/Mandible";
             break;
         case 3:
             testPatientStl = "unknown";
-            testPatientCbct = "unknown/Man_mask";
+            testPatientCbct = "unknown/Mandible";
             break;
         case 4:
             testPatientStl = "ashish upper";
-            testPatientCbct = "Ashish 1 op/Max_mask";
+            testPatientCbct = "Ashish 1 op/Maxilla";
             break;
         default:
             return;  // Fail fast pattern
     }
 
-    QString stlFilePath = "C:/Users/igrs/Desktop/Aswin/new_input_files/" +
-                          testPatientStl + ".stl";
+    QString stlFilePath =
+        "C:/Users/igrs/Desktop/Aswin/vr_inputs/" + testPatientStl + ".stl";
+    // QString dicomFolderPath =
+    //     "C:/Users/igrs/Desktop/Aswin/new_input_files/" + testPatientCbct;
     QString dicomFolderPath =
-        "C:/Users/igrs/Desktop/Aswin/new_input_files/" + testPatientCbct;
+        "C:/Users/igrs/Desktop/Aswin/vr_inputs/" + testPatientCbct;
 
     loadStl(stlFilePath);
     loadDicom(dicomFolderPath);
@@ -261,7 +258,8 @@ vtkSmartPointer<vtkVolumeProperty> DataLoader::getVolProps()
 
 vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
 {
-    m_isoAlgo->SetInputConnection(m_dicomReader->GetOutputPort());
+    // m_isoAlgo->SetInputConnection(m_dicomReader->GetOutputPort());
+    m_isoAlgo->SetInputConnection(m_thresholder->GetOutputPort());
     m_isoAlgo->SetValue(0, contourValue);
     m_isoAlgo->Update();
 

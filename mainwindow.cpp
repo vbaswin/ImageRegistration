@@ -73,7 +73,8 @@ void MainWindow::setupUI()
     m_rightRenderer->SetViewport(rightViewPort);
 
     // m_currentIso = 1;
-    m_currentIso = -999;
+    // m_currentIso = -999;
+    m_currentIso = 400;
 }
 
 void MainWindow::setupData()
@@ -88,8 +89,8 @@ void MainWindow::setupData()
     m_dicomVolume->SetMapper(m_dicomMapper);
     m_dicomVolume->SetProperty(m_regVM->getVolProps());
     m_rightRenderer->AddVolume(m_dicomVolume);
-*/
-    // m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(-999));
+    */
+    m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(m_currentIso));
     m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(m_currentIso));
     m_dicomSurfaceMapper->ScalarVisibilityOff();
     m_dicomActor->SetMapper(m_dicomSurfaceMapper);
@@ -106,7 +107,7 @@ void MainWindow::onDatasetChanged(int index) {
     m_regVM->loadTestingDataset(index);
 
     // 2. Adjust target isovalue dynamically (SAIFI == -999, Others == 1)
-    m_currentIso = (index == 0) ? -999 : 1;
+    // m_currentIso = (index == 0) ? -999 : 1;
 
     // Qt Best Practice: Block signals so the slider update doesn't trigger
     // redundant logic execution
@@ -118,6 +119,7 @@ void MainWindow::onDatasetChanged(int index) {
     // polygon objects
     m_stlMapper->SetInputData(m_regVM->getStlData());
     m_dicomSurfaceMapper->SetInputData(m_regVM->getSurfaceData(m_currentIso));
+    // m_dicomMapper
 
     // 4. Force optical realignment due to bounding box changes
     m_leftRenderer->ResetCamera();

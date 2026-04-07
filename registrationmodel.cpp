@@ -625,7 +625,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     float normalRadius = 6.0f;
     float featureRadius = 12.0f;
 
-    auto sourceDown = downsampleCloud(croppedSource, voxelLeafSize);
+    auto sourceDown = downsampleCloud(pclSource, voxelLeafSize);
     auto targetDown = downsampleCloud(croppedTarget, voxelLeafSize);
 
     pcl::io::savePLYFileASCII(

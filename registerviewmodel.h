@@ -16,6 +16,7 @@ public:
     vtkSmartPointer<vtkPolyData> getSurfaceData(double contourValue);
     vtkSmartPointer<vtkVolumeProperty> getVolProps();
     vtkSmartPointer<vtkProperty> getSurfaceProps();
+    void runDiagnosticCropTest();
 
     vtkSmartPointer<vtkMatrix4x4> performRegistration(double isoValue);
     void loadTestingDataset(int index);

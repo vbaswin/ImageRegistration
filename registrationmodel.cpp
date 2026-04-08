@@ -611,11 +611,19 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/solid_target.ply",
         *solidTarget);
 
-    auto croppedSource = extractTeethRegion(pclSource, false, 8.0f);
-    auto croppedTarget = extractTeethRegion(solidTarget, true, 8.0f);
+    vtkSmartPointer<vtkPolyData> croppedSourceMesh =
+        cropStlInVtk(sourceStl, 8.0f);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr newCroppedPcl =
+        convertVtkToPcl(croppedSourceMesh);
     pcl::io::savePLYFileASCII(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
-        *croppedSource);
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/new_cropped_source.ply",
+        *newCroppedPcl);
+
+    // auto croppedSource = extractTeethRegion(pclSource, false, 8.0f);
+    auto croppedTarget = extractTeethRegion(solidTarget, true, 8.0f);
+    // pcl::io::savePLYFileASCII(
+    //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
+    //     *croppedSource);
     pcl::io::savePLYFileASCII(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_target.ply",
         *croppedTarget);
@@ -625,7 +633,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     float normalRadius = 2.0f;
     float featureRadius = 4.5f;
 
-    auto sourceDown = downsampleCloud(pclSource, voxelLeafSize);
+    auto sourceDown = downsampleCloud(newCroppedPcl, voxelLeafSize);
     auto targetDown = downsampleCloud(croppedTarget, voxelLeafSize);
 
     pcl::io::savePLYFileASCII(
@@ -654,13 +662,16 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
                                                                   targetFPFH,
                                                                   maxCorrespDist);
     // immediately calculate their precision normals for the ICP engine.
-    auto icpSource = extractTeethRegion(pclSource, false, 3.0f);
+    // auto icpSource = extractTeethRegion(pclSource, false, 3.0f);
+    vtkSmartPointer<vtkPolyData> restrictSourceMesh =
+        cropStlInVtk(sourceStl, 3.0f);
+    auto icpSource = convertVtkToPcl(restrictSourceMesh);
     auto icpTarget = extractTeethRegion(pclTarget, true, 3.0f);
 
     qDebug() << "Generating high-fidelity point to plane normal map...";
     float highFidelityNormalRadius = 1.5f;
     auto fineSourceNormals =
-        estimateNormals(pclSource, highFidelityNormalRadius);
+        estimateNormals(newCroppedPcl, highFidelityNormalRadius);
     auto fineTargetNormals =
         estimateNormals(croppedTarget, highFidelityNormalRadius);
 
@@ -680,4 +691,224 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
                               fineSourceNormals, fineTargetNormals,
                               ransacTransform);
     return absoluteLockedTransform;
+}
+
+vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
+    vtkSmartPointer<vtkPolyData> inputMesh, float extractionThickness) {
+    if (!inputMesh || inputMesh->GetNumberOfPoints() == 0) return inputMesh;
+
+    // 1. Enforce True Triangles and Outward Biological Normals
+    vtkSmartPointer<vtkTriangleFilter> triangles =
+        vtkSmartPointer<vtkTriangleFilter>::New();
+    triangles->SetInputData(inputMesh);
+    triangles->Update();
+
+    vtkSmartPointer<vtkPolyDataNormals> normalGenerator =
+        vtkSmartPointer<vtkPolyDataNormals>::New();
+    normalGenerator->SetInputData(triangles->GetOutput());
+    normalGenerator->ComputeCellNormalsOn();
+    normalGenerator->ComputePointNormalsOff();
+    normalGenerator->ConsistencyOn();  // Enforces the physical "Inside vs
+                                       // Outside" boundary
+    normalGenerator->SplittingOff();
+    normalGenerator->Update();
+
+    vtkPolyData* meshWithNormals = normalGenerator->GetOutput();
+    vtkFloatArray* cellNormals = vtkFloatArray::SafeDownCast(
+        meshWithNormals->GetCellData()->GetNormals());
+
+    // 2. The Gauss Dome Integration (Area-Weighted Normal Summing)
+    // Finding the absolute "UP" direction by taking advantage of the hollow
+    // shell physics
+    double globalVector[3] = {0.0, 0.0, 0.0};
+
+    for (vtkIdType i = 0; i < meshWithNormals->GetNumberOfCells(); ++i) {
+        vtkCell* cell = meshWithNormals->GetCell(i);
+        if (cell->GetCellType() == VTK_TRIANGLE) {
+            vtkPoints* pts = cell->GetPoints();
+            double p0[3], p1[3], p2[3];
+            pts->GetPoint(0, p0);
+            pts->GetPoint(1, p1);
+            pts->GetPoint(2, p2);
+
+            // Area-weighting ensures massive flat bases do not overpower the
+            // highly faceted teeth
+            double area = vtkTriangle::TriangleArea(p0, p1, p2);
+            double normal[3];
+            cellNormals->GetTuple(i, normal);
+
+            globalVector[0] += normal[0] * area;
+            globalVector[1] += normal[1] * area;
+            globalVector[2] += normal[2] * area;
+        }
+    }
+
+    double magnitude = vtkMath::Norm(globalVector);
+
+    // Safety Fallback: If STL is a perfect solid block, sum is 0 (Gauss's
+    // Theorem).
+    if (magnitude < 1e-5) {
+        qWarning() << "Mesh is perfectly closed. Gauss Dome integration "
+                      "failed. Using strict Z baseline.";
+        globalVector[0] = 0.0;
+        globalVector[1] = 0.0;
+        globalVector[2] = 1.0;
+        magnitude = 1.0;
+    }
+
+    globalVector[0] /= magnitude;
+    globalVector[1] /= magnitude;
+    globalVector[2] /= magnitude;
+
+    // 3. Mathematical Alignment Matrix (Leveling the True Orientation)
+    Eigen::Vector3f globalV(globalVector[0], globalVector[1], globalVector[2]);
+    Eigen::Vector3f worldZ(0.0f, 0.0f, 1.0f);
+
+    float angle = std::acos(globalV.dot(worldZ));
+    Eigen::Vector3f rotationAxis = globalV.cross(worldZ);
+
+    // Prevent Eigen NaN crashes if the scan is perfectly inverted (180deg) or
+    // perfectly aligned (0deg)
+    if (rotationAxis.norm() < 1e-5f) {
+        rotationAxis =
+            Eigen::Vector3f(1.0f, 0.0f, 0.0f);  // Default to X-axis flip
+    } else {
+        rotationAxis.normalize();
+    }
+
+    vtkSmartPointer<vtkTransform> transform =
+        vtkSmartPointer<vtkTransform>::New();
+    transform->PostMultiply();
+    if (std::abs(globalV.dot(worldZ)) < 0.999f) {
+        transform->RotateWXYZ(angle * 180.0 / vtkMath::Pi(), rotationAxis[0],
+                              rotationAxis[1], rotationAxis[2]);
+    }
+
+    vtkSmartPointer<vtkTransformPolyDataFilter> alignFilter =
+        vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+    alignFilter->SetInputData(meshWithNormals);
+    alignFilter->SetTransform(transform);
+    alignFilter->Update();
+
+    vtkSmartPointer<vtkPolyData> alignedMesh = alignFilter->GetOutput();
+
+    // ==========================================================
+    // 4. "Dropping the Plane" for True Occlusal Target Lock
+    // ==========================================================
+    // Gauss Dome roughly aligns UP, but asymmetry creates residual tilt.
+    // We isolate the top structural points (cusps) by dropping a deep 10mm
+    // plane, solving for the true occlusal tilt using PCA (Principal Component
+    // Analysis), and flattening the jaw perfectly before the final extraction
+    // slice.
+
+    double bounds[6];  // [xmin, xmax, ymin, ymax, zmin, zmax]
+    alignedMesh->GetBounds(bounds);
+    double const initialMaxZ = bounds[5];
+    vtkSmartPointer<vtkPlane> probePlane = vtkSmartPointer<vtkPlane>::New();
+    // Drop 10.0f deep to guarantee capture of both incisors and skewed molars
+    probePlane->SetOrigin(0.0, 0.0, initialMaxZ - 10.0f);
+    probePlane->SetNormal(0.0, 0.0, 1.0);
+    vtkSmartPointer<vtkClipPolyData> topsClipper =
+        vtkSmartPointer<vtkClipPolyData>::New();
+    topsClipper->SetInputData(alignedMesh);
+    topsClipper->SetClipFunction(probePlane);
+    topsClipper->Update();
+    vtkPolyData* topsMesh = topsClipper->GetOutput();
+    vtkIdType const numTops = topsMesh->GetNumberOfPoints();
+    // Isolate the True Occlusal Tilt via minimal variance vector (PCA)
+    if (numTops > 50) {
+        Eigen::Vector3f centroid(0.0f, 0.0f, 0.0f);
+        for (vtkIdType i = 0; i < numTops; ++i) {
+            double p[3];
+            topsMesh->GetPoint(i, p);
+            centroid += Eigen::Vector3f(static_cast<float>(p[0]),
+                                        static_cast<float>(p[1]),
+                                        static_cast<float>(p[2]));
+        }
+        centroid /= static_cast<float>(numTops);
+        Eigen::Matrix3f covariance = Eigen::Matrix3f::Zero();
+        for (vtkIdType i = 0; i < numTops; ++i) {
+            double p[3];
+            topsMesh->GetPoint(i, p);
+            Eigen::Vector3f pt(static_cast<float>(p[0]),
+                               static_cast<float>(p[1]),
+                               static_cast<float>(p[2]));
+            Eigen::Vector3f const centered = pt - centroid;
+            covariance += centered * centered.transpose();
+        }
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> pca(covariance);
+        // The minimal variance axis explicitly locates the orthogonal normal to
+        // the sheet of teeth cusps
+        Eigen::Vector3f trueOcclusalNormal = pca.eigenvectors().col(0);
+
+        if (trueOcclusalNormal.z() < 0) {
+            trueOcclusalNormal =
+                -trueOcclusalNormal;  // Enforce +Z Biological UP
+        }
+        Eigen::Vector3f const targetWorldZ(0.0f, 0.0f, 1.0f);
+        float const correctiveAngle =
+            std::acos(trueOcclusalNormal.dot(targetWorldZ));
+        Eigen::Vector3f tiltAxis = trueOcclusalNormal.cross(targetWorldZ);
+        // Sub-millimeter tilt alignment execution
+        if (tiltAxis.norm() > 1e-5f) {
+            tiltAxis.normalize();
+
+            // Mathematically append the precise tilt correction to the Global
+            // Transform. VTK PostMultiply safely parses matrices sequentially:
+            // Centroid translated to absolute 0,0,0 -> Rotated -> Translated
+            // visually back.
+            transform->Translate(-centroid.x(), -centroid.y(), -centroid.z());
+            transform->RotateWXYZ(correctiveAngle * 180.0 / vtkMath::Pi(),
+                                  tiltAxis.x(), tiltAxis.y(), tiltAxis.z());
+            transform->Translate(centroid.x(), centroid.y(), centroid.z());
+
+            // Re-apply filter to push the flattened vertices directly into
+            // memory
+            alignFilter->Update();
+            alignedMesh = alignFilter->GetOutput();
+        }
+    }
+    // ==========================================================
+    // 5. Extreme Precision Peak Slicing (The Floating Sheet)
+    // ==========================================================
+    alignedMesh->GetBounds(bounds);
+    double const finalMaxZ = bounds[5];
+    vtkSmartPointer<vtkPlane> clipPlane = vtkSmartPointer<vtkPlane>::New();
+    // Suspend the mathematical sheet downward from the fully-leveled,
+    // synchronized cusp height
+    clipPlane->SetOrigin(0.0, 0.0, finalMaxZ - extractionThickness);
+    clipPlane->SetNormal(0.0, 0.0, 1.0);
+    vtkSmartPointer<vtkClipPolyData> clipper =
+        vtkSmartPointer<vtkClipPolyData>::New();
+    clipper->SetInputData(alignedMesh);
+    clipper->SetClipFunction(clipPlane);
+    clipper->Update();
+    // ==========================================================
+    // 6. Restore Absolute World Coordinates (Seamless Integration)
+    // ==========================================================
+    vtkSmartPointer<vtkTransform> invTransform =
+        vtkSmartPointer<vtkTransform>::New();
+    // The mathematical matrix natively unwraps BOTH the baseline Gauss
+    // alignment AND the PCA tilt concurrently
+    invTransform->SetMatrix(transform->GetMatrix());
+    invTransform->Inverse();
+    vtkSmartPointer<vtkTransformPolyDataFilter> restoreFilter =
+        vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+    restoreFilter->SetInputData(clipper->GetOutput());
+    restoreFilter->SetTransform(invTransform);
+    restoreFilter->Update();
+    return restoreFilter->GetOutput();
+}
+void RegistrationModel::saveDiagnosticCrop(
+    vtkSmartPointer<vtkPolyData> inputStl, const QString& outputPath) {
+    if (!inputStl || inputStl->GetNumberOfPoints() == 0) return;
+
+    // Confined entirely inside the Math model
+    vtkSmartPointer<vtkPolyData> croppedMesh = cropStlInVtk(inputStl, 8.0f);
+
+    vtkSmartPointer<vtkSTLWriter> writer = vtkSmartPointer<vtkSTLWriter>::New();
+    writer->SetFileName(outputPath.toUtf8().constData());
+    writer->SetInputData(croppedMesh);
+    writer->Write();
+    qDebug() << "Diagnostic VTK Crop cleanly saved to:" << outputPath;
 }

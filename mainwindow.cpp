@@ -108,6 +108,7 @@ void MainWindow::onDatasetChanged(int index) {
 
     // 2. Adjust target isovalue dynamically (SAIFI == -999, Others == 1)
     // m_currentIso = (index == 0) ? -999 : 1;
+    m_regVM->runDiagnosticCropTest();
 
     // Qt Best Practice: Block signals so the slider update doesn't trigger
     // redundant logic execution

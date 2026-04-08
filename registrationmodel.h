@@ -3,10 +3,21 @@
 #include <pcl/io/vtk_lib_io.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <vtkCellData.h>
+#include <vtkClipPolyData.h>
+#include <vtkFloatArray.h>
+#include <vtkMath.h>
 #include <vtkMatrix4x4.h>
+#include <vtkPlane.h>
 #include <vtkPolyData.h>
+#include <vtkPolyDataNormals.h>
 #include <vtkSmartPointer.h>
+#include <vtkTransform.h>
+#include <vtkTransformPolyDataFilter.h>
+#include <vtkTriangle.h>
+#include <vtkTriangleFilter.h>
 
+#include <Eigen/Dense>
 #include <QDebug>
 #include <QObject>
 
@@ -19,7 +30,13 @@ public:
         vtkSmartPointer<vtkPolyData> sourceStl,
         vtkSmartPointer<vtkPolyData> targetSurface);
 
+    void saveDiagnosticCrop(vtkSmartPointer<vtkPolyData> inputStl,
+                            const QString& outputPath);
+
    private:
+    vtkSmartPointer<vtkPolyData> cropStlInVtk(
+        vtkSmartPointer<vtkPolyData> inputMesh, float extractionThickness);
+
     pcl::PointCloud<pcl::PointXYZ>::Ptr applyMorphologicalClosing(
         pcl::PointCloud<pcl::PointXYZ>::Ptr inputCloud, float closingRadius,
         float voxelResolution);

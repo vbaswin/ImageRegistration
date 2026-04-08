@@ -52,6 +52,7 @@ LIBS += \
 -lvtkInteractionImage-8.2 \
 -lvtkGUISupportQt-8.2 \
 -lvtkFiltersSources-8.2 \
+-lvtkFiltersGeneral-8.2 \
 -lvtkIOImage-8.2 \
 -lvtkIOCore-8.2 \
 -lvtkImagingCore-8.2 \

@@ -1,11 +1,22 @@
 #include "dataloader.h"
 
 #include <vtkBox.h>
+#include <vtkCellData.h>
 #include <vtkClipPolyData.h>
 #include <vtkColorTransferFunction.h>
+#include <vtkFloatArray.h>
+#include <vtkMath.h>
+#include <vtkPlane.h>
 #include <vtkPolyDataConnectivityFilter.h>
+#include <vtkPolyDataNormals.h>
+#include <vtkSTLWriter.h>
 #include <vtkStringArray.h>
+#include <vtkTransform.h>
+#include <vtkTransformPolyDataFilter.h>
+#include <vtkTriangle.h>
+#include <vtkTriangleFilter.h>
 
+#include <Eigen/Dense>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
@@ -134,6 +145,22 @@ bool DataLoader::loadStl(QString &filePath)
     m_stlData = m_stlReader->GetOutput();
     if (m_stlData == nullptr || m_stlData->GetNumberOfPoints() == 0)
         return false;
+
+    // // === DIAGNOSTIC UNIT TEST: Execute Crop and Save Immediately ===
+    // qDebug() << "Executing VTK Gauss-Dome Crop for diagnostics...";
+    // vtkSmartPointer<vtkPolyData> testingCroppedMesh =
+    //     cropStlInVtk(m_stlData, 8.0f);
+
+    // QString savePath =
+    //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/VTK_DEBUG_CROP.stl";
+    // vtkSmartPointer<vtkSTLWriter> writer =
+    // vtkSmartPointer<vtkSTLWriter>::New();
+    // writer->SetFileName(savePath.toUtf8().constData());
+    // writer->SetInputData(testingCroppedMesh);
+    // writer->Write();
+    // qDebug() << "Diagnostic cropped STL successfully saved to:" << savePath;
+    // // ===============================================================
+
     return true;
 }
 

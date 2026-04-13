@@ -612,7 +612,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         *solidTarget);
 
     vtkSmartPointer<vtkPolyData> croppedSourceMesh =
-        cropStlInVtk(sourceStl, 8.0f);
+        cropStlInVtk(sourceStl, 10.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr newCroppedPcl =
         convertVtkToPcl(croppedSourceMesh);
     pcl::io::savePLYFileASCII(
@@ -791,100 +791,82 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
     alignFilter->Update();
 
     vtkSmartPointer<vtkPolyData> alignedMesh = alignFilter->GetOutput();
-
     // ==========================================================
-    // 4. "Dropping the Plane" for True Occlusal Target Lock
+    // 4. "Dropping the Plane" to Isolate Teeth for PCA
     // ==========================================================
-    // Gauss Dome roughly aligns UP, but asymmetry creates residual tilt.
-    // We isolate the top structural points (cusps) by dropping a deep 10mm
-    // plane, solving for the true occlusal tilt using PCA (Principal Component
-    // Analysis), and flattening the jaw perfectly before the final extraction
-    // slice.
-
     double bounds[6];  // [xmin, xmax, ymin, ymax, zmin, zmax]
     alignedMesh->GetBounds(bounds);
     double const initialMaxZ = bounds[5];
+    double const zSpan = bounds[5] - bounds[4];
+
     vtkSmartPointer<vtkPlane> probePlane = vtkSmartPointer<vtkPlane>::New();
-    // Drop 10.0f deep to guarantee capture of both incisors and skewed molars
-    probePlane->SetOrigin(0.0, 0.0, initialMaxZ - 10.0f);
+
+    // DYNAMIC EXPANSION: Drop 20mm from top (but max 60% of total height)
+    // This feeds the FULL 60x50mm U-shaped dental arch to PCA, preventing it
+    // from mathematically collapsing if only the front incisors were caught.
+    double safeClipZ = std::max(initialMaxZ - 20.0, bounds[5] - (zSpan * 0.6));
+
+    probePlane->SetOrigin(0.0, 0.0, safeClipZ);
     probePlane->SetNormal(0.0, 0.0, 1.0);
+
     vtkSmartPointer<vtkClipPolyData> topsClipper =
         vtkSmartPointer<vtkClipPolyData>::New();
     topsClipper->SetInputData(alignedMesh);
     topsClipper->SetClipFunction(probePlane);
     topsClipper->Update();
+
     vtkPolyData* topsMesh = topsClipper->GetOutput();
     vtkIdType const numTops = topsMesh->GetNumberOfPoints();
-    // Isolate the True Occlusal Tilt via minimal variance vector (PCA)
-    // Isolate the True Occlusal Tilt via RANSAC Geometric Lock
-    if (numTops > 50) {
-        // 1. Convert the highest points into a format our RANSAC glass-sheet
-        // can read
-        pcl::PointCloud<pcl::PointXYZ>::Ptr topsCloud(
-            new pcl::PointCloud<pcl::PointXYZ>());
-        topsCloud->points.reserve(numTops);
 
+    // Isolate the True Occlusal Tilt via minimal variance vector (PCA)
+    if (numTops > 50) {
         Eigen::Vector3f centroid(0.0f, 0.0f, 0.0f);
         for (vtkIdType i = 0; i < numTops; ++i) {
             double p[3];
             topsMesh->GetPoint(i, p);
-            topsCloud->points.push_back(pcl::PointXYZ(
-                static_cast<float>(p[0]), static_cast<float>(p[1]),
-                static_cast<float>(p[2])));
             centroid += Eigen::Vector3f(static_cast<float>(p[0]),
                                         static_cast<float>(p[1]),
                                         static_cast<float>(p[2]));
         }
         centroid /= static_cast<float>(numTops);
-        topsCloud->width = topsCloud->points.size();
-        topsCloud->height = 1;
 
-        // 2. Exact planar target lock using RANSAC.
-        // This drops a mathematical flat plane onto the very tips of the teeth,
-        // ignoring the imbalanced volume underneath them.
-        pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-        pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+        Eigen::Matrix3f covariance = Eigen::Matrix3f::Zero();
+        for (vtkIdType i = 0; i < numTops; ++i) {
+            double p[3];
+            topsMesh->GetPoint(i, p);
+            Eigen::Vector3f pt(static_cast<float>(p[0]),
+                               static_cast<float>(p[1]),
+                               static_cast<float>(p[2]));
+            Eigen::Vector3f const centered = pt - centroid;
+            covariance += centered * centered.transpose();
+        }
+        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> pca(covariance);
 
-        pcl::SACSegmentation<pcl::PointXYZ> seg;
-        seg.setOptimizeCoefficients(true);
-        seg.setModelType(pcl::SACMODEL_PLANE);
-        seg.setMethodType(pcl::SAC_RANSAC);
-        // A strict 1.5mm threshold means the plane only cares about the very
-        // highest cusps
-        seg.setDistanceThreshold(1.5);
-        seg.setMaxIterations(1000);
-        seg.setInputCloud(topsCloud);
-        seg.segment(*inliers, *coefficients);
+        // The minimal variance axis locates the orthogonal normal to the
+        // U-shaped arch
+        Eigen::Vector3f trueOcclusalNormal = pca.eigenvectors().col(0);
 
-        if (!inliers->indices.empty()) {
-            Eigen::Vector3f trueOcclusalNormal(coefficients->values[0],
-                                               coefficients->values[1],
-                                               coefficients->values[2]);
-            trueOcclusalNormal.normalize();
+        if (trueOcclusalNormal.z() < 0) {
+            trueOcclusalNormal =
+                -trueOcclusalNormal;  // Enforce Biological UP (+Z)
+        }
 
-            // Ensure the jaw is facing UP
-            if (trueOcclusalNormal.z() < 0) {
-                trueOcclusalNormal = -trueOcclusalNormal;
-            }
+        Eigen::Vector3f const targetWorldZ(0.0f, 0.0f, 1.0f);
+        float const correctiveAngle =
+            std::acos(trueOcclusalNormal.dot(targetWorldZ));
+        Eigen::Vector3f tiltAxis = trueOcclusalNormal.cross(targetWorldZ);
 
-            Eigen::Vector3f const targetWorldZ(0.0f, 0.0f, 1.0f);
-            float const correctiveAngle =
-                std::acos(trueOcclusalNormal.dot(targetWorldZ));
-            Eigen::Vector3f tiltAxis = trueOcclusalNormal.cross(targetWorldZ);
+        // Sub-millimeter tilt alignment execution
+        if (tiltAxis.norm() > 1e-5f) {
+            tiltAxis.normalize();
 
-            // Level the entire jaw perfectly flat against the horizon
-            if (tiltAxis.norm() > 1e-5f) {
-                tiltAxis.normalize();
+            transform->Translate(-centroid.x(), -centroid.y(), -centroid.z());
+            transform->RotateWXYZ(correctiveAngle * 180.0 / vtkMath::Pi(),
+                                  tiltAxis.x(), tiltAxis.y(), tiltAxis.z());
+            transform->Translate(centroid.x(), centroid.y(), centroid.z());
 
-                transform->Translate(-centroid.x(), -centroid.y(),
-                                     -centroid.z());
-                transform->RotateWXYZ(correctiveAngle * 180.0 / vtkMath::Pi(),
-                                      tiltAxis.x(), tiltAxis.y(), tiltAxis.z());
-                transform->Translate(centroid.x(), centroid.y(), centroid.z());
-
-                alignFilter->Update();
-                alignedMesh = alignFilter->GetOutput();
-            }
+            alignFilter->Update();
+            alignedMesh = alignFilter->GetOutput();
         }
     }
 

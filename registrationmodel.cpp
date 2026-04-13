@@ -816,58 +816,78 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
     vtkPolyData* topsMesh = topsClipper->GetOutput();
     vtkIdType const numTops = topsMesh->GetNumberOfPoints();
     // Isolate the True Occlusal Tilt via minimal variance vector (PCA)
+    // Isolate the True Occlusal Tilt via RANSAC Geometric Lock
     if (numTops > 50) {
+        // 1. Convert the highest points into a format our RANSAC glass-sheet
+        // can read
+        pcl::PointCloud<pcl::PointXYZ>::Ptr topsCloud(
+            new pcl::PointCloud<pcl::PointXYZ>());
+        topsCloud->points.reserve(numTops);
+
         Eigen::Vector3f centroid(0.0f, 0.0f, 0.0f);
         for (vtkIdType i = 0; i < numTops; ++i) {
             double p[3];
             topsMesh->GetPoint(i, p);
+            topsCloud->points.push_back(pcl::PointXYZ(
+                static_cast<float>(p[0]), static_cast<float>(p[1]),
+                static_cast<float>(p[2])));
             centroid += Eigen::Vector3f(static_cast<float>(p[0]),
                                         static_cast<float>(p[1]),
                                         static_cast<float>(p[2]));
         }
         centroid /= static_cast<float>(numTops);
-        Eigen::Matrix3f covariance = Eigen::Matrix3f::Zero();
-        for (vtkIdType i = 0; i < numTops; ++i) {
-            double p[3];
-            topsMesh->GetPoint(i, p);
-            Eigen::Vector3f pt(static_cast<float>(p[0]),
-                               static_cast<float>(p[1]),
-                               static_cast<float>(p[2]));
-            Eigen::Vector3f const centered = pt - centroid;
-            covariance += centered * centered.transpose();
-        }
-        Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> pca(covariance);
-        // The minimal variance axis explicitly locates the orthogonal normal to
-        // the sheet of teeth cusps
-        Eigen::Vector3f trueOcclusalNormal = pca.eigenvectors().col(0);
+        topsCloud->width = topsCloud->points.size();
+        topsCloud->height = 1;
 
-        if (trueOcclusalNormal.z() < 0) {
-            trueOcclusalNormal =
-                -trueOcclusalNormal;  // Enforce +Z Biological UP
-        }
-        Eigen::Vector3f const targetWorldZ(0.0f, 0.0f, 1.0f);
-        float const correctiveAngle =
-            std::acos(trueOcclusalNormal.dot(targetWorldZ));
-        Eigen::Vector3f tiltAxis = trueOcclusalNormal.cross(targetWorldZ);
-        // Sub-millimeter tilt alignment execution
-        if (tiltAxis.norm() > 1e-5f) {
-            tiltAxis.normalize();
+        // 2. Exact planar target lock using RANSAC.
+        // This drops a mathematical flat plane onto the very tips of the teeth,
+        // ignoring the imbalanced volume underneath them.
+        pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
 
-            // Mathematically append the precise tilt correction to the Global
-            // Transform. VTK PostMultiply safely parses matrices sequentially:
-            // Centroid translated to absolute 0,0,0 -> Rotated -> Translated
-            // visually back.
-            transform->Translate(-centroid.x(), -centroid.y(), -centroid.z());
-            transform->RotateWXYZ(correctiveAngle * 180.0 / vtkMath::Pi(),
-                                  tiltAxis.x(), tiltAxis.y(), tiltAxis.z());
-            transform->Translate(centroid.x(), centroid.y(), centroid.z());
+        pcl::SACSegmentation<pcl::PointXYZ> seg;
+        seg.setOptimizeCoefficients(true);
+        seg.setModelType(pcl::SACMODEL_PLANE);
+        seg.setMethodType(pcl::SAC_RANSAC);
+        // A strict 1.5mm threshold means the plane only cares about the very
+        // highest cusps
+        seg.setDistanceThreshold(1.5);
+        seg.setMaxIterations(1000);
+        seg.setInputCloud(topsCloud);
+        seg.segment(*inliers, *coefficients);
 
-            // Re-apply filter to push the flattened vertices directly into
-            // memory
-            alignFilter->Update();
-            alignedMesh = alignFilter->GetOutput();
+        if (!inliers->indices.empty()) {
+            Eigen::Vector3f trueOcclusalNormal(coefficients->values[0],
+                                               coefficients->values[1],
+                                               coefficients->values[2]);
+            trueOcclusalNormal.normalize();
+
+            // Ensure the jaw is facing UP
+            if (trueOcclusalNormal.z() < 0) {
+                trueOcclusalNormal = -trueOcclusalNormal;
+            }
+
+            Eigen::Vector3f const targetWorldZ(0.0f, 0.0f, 1.0f);
+            float const correctiveAngle =
+                std::acos(trueOcclusalNormal.dot(targetWorldZ));
+            Eigen::Vector3f tiltAxis = trueOcclusalNormal.cross(targetWorldZ);
+
+            // Level the entire jaw perfectly flat against the horizon
+            if (tiltAxis.norm() > 1e-5f) {
+                tiltAxis.normalize();
+
+                transform->Translate(-centroid.x(), -centroid.y(),
+                                     -centroid.z());
+                transform->RotateWXYZ(correctiveAngle * 180.0 / vtkMath::Pi(),
+                                      tiltAxis.x(), tiltAxis.y(), tiltAxis.z());
+                transform->Translate(centroid.x(), centroid.y(), centroid.z());
+
+                alignFilter->Update();
+                alignedMesh = alignFilter->GetOutput();
+            }
         }
     }
+
     // ==========================================================
     // 5. Extreme Precision Peak Slicing (The Floating Sheet)
     // ==========================================================

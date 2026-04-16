@@ -258,7 +258,8 @@ void DataLoader::loadTestingDataset(int index) {
             break;
         case 5:
             testPatientStl = "parveen lower";
-            testPatientCbct = "Parveen lower";
+            // testPatientCbct = "Parveen lower";
+            testPatientCbct = "Parveen/Mandible";
             break;
         default:
             return;  // Fail fast pattern

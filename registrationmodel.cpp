@@ -665,15 +665,15 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     pcl::io::savePLYFileASCII(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_enamel.ply",
         *morphTargetEnamel);
-    auto morphTargetEntireJaw =
-        applyMorphologicalClosing(pclEntireJaw, 3.0f, 0.5f);
+    // auto morphTargetEntireJaw =
+    //     applyMorphologicalClosing(pclEntireJaw, 3.0f, 0.5f);
 
-    pcl::io::savePLYFileASCII(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_entire_jaw.ply",
-        *morphTargetEntireJaw);
+    // pcl::io::savePLYFileASCII(
+    //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_entire_jaw.ply",
+    //     *morphTargetEntireJaw);
 
     vtkSmartPointer<vtkPolyData> croppedSourceMesh =
-        cropStlInVtk(sourceStl, 10.0f);
+        cropStlInVtk(sourceStl, 8.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr newCroppedPcl =
         convertVtkToPcl(croppedSourceMesh);
     pcl::io::savePLYFileASCII(
@@ -775,64 +775,46 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
     normalGenerator->Update();
 
     vtkPolyData* meshWithNormals = normalGenerator->GetOutput();
-    vtkFloatArray* cellNormals = vtkFloatArray::SafeDownCast(
-        meshWithNormals->GetCellData()->GetNormals());
+    // ==========================================================
+    // 2. Global PCA Pre-Leveling (Bypassing U-Shape Imbalance)
+    // ==========================================================
+    // Instead of Gauss point-normals, we evaluate the spatial mass.
+    vtkIdType numGlobalPts = meshWithNormals->GetNumberOfPoints();
+    Eigen::Vector3f globalCentroid(0.0f, 0.0f, 0.0f);
 
-    // 2. The Gauss Dome Integration (Area-Weighted Normal Summing)
-    // Finding the absolute "UP" direction by taking advantage of the hollow
-    // shell physics
-    double globalVector[3] = {0.0, 0.0, 0.0};
+    for (vtkIdType i = 0; i < numGlobalPts; ++i) {
+        double p[3];
+        meshWithNormals->GetPoint(i, p);
+        globalCentroid +=
+            Eigen::Vector3f(static_cast<float>(p[0]), static_cast<float>(p[1]),
+                            static_cast<float>(p[2]));
+    }
+    globalCentroid /= static_cast<float>(numGlobalPts);
 
-    for (vtkIdType i = 0; i < meshWithNormals->GetNumberOfCells(); ++i) {
-        vtkCell* cell = meshWithNormals->GetCell(i);
-        if (cell->GetCellType() == VTK_TRIANGLE) {
-            vtkPoints* pts = cell->GetPoints();
-            double p0[3], p1[3], p2[3];
-            pts->GetPoint(0, p0);
-            pts->GetPoint(1, p1);
-            pts->GetPoint(2, p2);
-
-            // Area-weighting ensures massive flat bases do not overpower the
-            // highly faceted teeth
-            double area = vtkTriangle::TriangleArea(p0, p1, p2);
-            double normal[3];
-            cellNormals->GetTuple(i, normal);
-
-            globalVector[0] += normal[0] * area;
-            globalVector[1] += normal[1] * area;
-            globalVector[2] += normal[2] * area;
-        }
+    // Evaluate geometric covariance to mathematically isolate the true Depth
+    // axis
+    Eigen::Matrix3f globalCovariance = Eigen::Matrix3f::Zero();
+    for (vtkIdType i = 0; i < numGlobalPts; ++i) {
+        double p[3];
+        meshWithNormals->GetPoint(i, p);
+        Eigen::Vector3f pt(static_cast<float>(p[0]), static_cast<float>(p[1]),
+                           static_cast<float>(p[2]));
+        Eigen::Vector3f const centered = pt - globalCentroid;
+        globalCovariance += centered * centered.transpose();
     }
 
-    double magnitude = vtkMath::Norm(globalVector);
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> globalPca(globalCovariance);
 
-    // Safety Fallback: If STL is a perfect solid block, sum is 0 (Gauss's
-    // Theorem).
-    if (magnitude < 1e-5) {
-        qWarning() << "Mesh is perfectly closed. Gauss Dome integration "
-                      "failed. Using strict Z baseline.";
-        globalVector[0] = 0.0;
-        globalVector[1] = 0.0;
-        globalVector[2] = 1.0;
-        magnitude = 1.0;
-    }
-
-    globalVector[0] /= magnitude;
-    globalVector[1] /= magnitude;
-    globalVector[2] /= magnitude;
-
-    // 3. Mathematical Alignment Matrix (Leveling the True Orientation)
-    Eigen::Vector3f globalV(globalVector[0], globalVector[1], globalVector[2]);
+    // The fundamental property of dental arches: The axis with minimal
+    // geometric variance is the Z-axis.
+    Eigen::Vector3f globalV = globalPca.eigenvectors().col(0);
     Eigen::Vector3f worldZ(0.0f, 0.0f, 1.0f);
 
     float angle = std::acos(globalV.dot(worldZ));
     Eigen::Vector3f rotationAxis = globalV.cross(worldZ);
 
-    // Prevent Eigen NaN crashes if the scan is perfectly inverted (180deg) or
-    // perfectly aligned (0deg)
     if (rotationAxis.norm() < 1e-5f) {
-        rotationAxis =
-            Eigen::Vector3f(1.0f, 0.0f, 0.0f);  // Default to X-axis flip
+        rotationAxis = Eigen::Vector3f(1.0f, 0.0f, 0.0f);
     } else {
         rotationAxis.normalize();
     }
@@ -845,6 +827,7 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
                               rotationAxis[1], rotationAxis[2]);
     }
 
+    // Apply the perfectly leveled horizon rotation to the mesh
     vtkSmartPointer<vtkTransformPolyDataFilter> alignFilter =
         vtkSmartPointer<vtkTransformPolyDataFilter>::New();
     alignFilter->SetInputData(meshWithNormals);
@@ -854,15 +837,15 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
     vtkSmartPointer<vtkPolyData> alignedMesh = alignFilter->GetOutput();
 
     // ==========================================================
-    // 3.5 Topological Border Polarity Fix (Density-Independent)
+    // 3.5 Topological Border Polarity Lock (Asymmetry-Immunized)
     // ==========================================================
-    // Rather than relying on point density, we rely on pure topology.
-    // The only massive "open edge" in an intraoral optical scan is the
-    // gum-line scanner boundary. The teeth are a watertight surface.
+    // PCA guarantees leveling, but it does not know UP from DOWN.
+    // We isolate the native structural gum-line boundary to guarantee polarity.
+
     vtkSmartPointer<vtkFeatureEdges> edgeExtractor =
         vtkSmartPointer<vtkFeatureEdges>::New();
     edgeExtractor->SetInputData(alignedMesh);
-    edgeExtractor->BoundaryEdgesOn();  // Extract the open rim
+    edgeExtractor->BoundaryEdgesOn();
     edgeExtractor->FeatureEdgesOff();
     edgeExtractor->NonManifoldEdgesOff();
     edgeExtractor->ManifoldEdgesOff();
@@ -870,29 +853,36 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
 
     vtkPolyData* boundaries = edgeExtractor->GetOutput();
     vtkIdType numBoundaryPts = boundaries->GetNumberOfPoints();
+    vtkIdType numMeshPts = alignedMesh->GetNumberOfPoints();
 
-    // If numBoundaryPts == 0, it's a fully closed solid model, meaning
-    // the Gauss Integration worked natively and we do not intervene.
-    if (numBoundaryPts > 50) {
-        double currentBounds[6];
-        alignedMesh->GetBounds(currentBounds);
-        double zMid = (currentBounds[4] + currentBounds[5]) / 2.0;
+    // Mathematically trigger ONLY if we extract a valid open-shell boundary
+    if (numBoundaryPts > 100 && numMeshPts > 0) {
+        // Find the absolute geographic density center of the leveled mesh
+        double meshMeanZ = 0.0;
+        for (vtkIdType i = 0; i < numMeshPts; ++i) {
+            double p[3];
+            alignedMesh->GetPoint(i, p);
+            meshMeanZ += p[2];
+        }
+        meshMeanZ /= static_cast<double>(numMeshPts);
 
-        double meanBoundaryZ = 0.0;
+        // Find the precise geometric altitude of the extracted boundary skirt
+        double boundaryMeanZ = 0.0;
         for (vtkIdType i = 0; i < numBoundaryPts; ++i) {
             double p[3];
             boundaries->GetPoint(i, p);
-            meanBoundaryZ += p[2];
+            boundaryMeanZ += p[2];
         }
-        meanBoundaryZ /= static_cast<double>(numBoundaryPts);
+        boundaryMeanZ /= static_cast<double>(numBoundaryPts);
 
-        // If the open boundary (the gum skirt) is physically higher than the
-        // center of the bounding box, the teeth are definitively upside down.
-        if (meanBoundaryZ > zMid) {
+        // Anatomical Theorem: If the average altitude of the gum boundary is
+        // stationed physically ABOVE the center mass of the mesh, the jaw is
+        // completely upside-down.
+        if (boundaryMeanZ > meshMeanZ) {
             vtkSmartPointer<vtkTransform> flipTransform =
                 vtkSmartPointer<vtkTransform>::New();
             flipTransform->PostMultiply();
-            flipTransform->RotateX(180.0);  // 180° Right-Handed inversion
+            flipTransform->RotateX(180.0);
 
             vtkSmartPointer<vtkTransformPolyDataFilter> flipFilter =
                 vtkSmartPointer<vtkTransformPolyDataFilter>::New();
@@ -901,18 +891,15 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
             flipFilter->Update();
 
             alignedMesh = flipFilter->GetOutput();
-
-            // Mathematically append for Phase 6 unwrap
-            transform->RotateX(180.0);
+            transform->RotateX(
+                180.0);  // Append for continuous Phase 6 integration
         }
     }
-
     // ==========================================================
     // 4. "Dropping the Plane" to Isolate Teeth for PCA
     // ==========================================================
     double bounds[6];  // [xmin, xmax, ymin, ymax, zmin, zmax]
     alignedMesh->GetBounds(bounds);
-
     double const initialMaxZ = bounds[5];
     double const zSpan = bounds[5] - bounds[4];
 

@@ -27,6 +27,7 @@
 #include <vtkFeatureEdges.h>
 #include <vtkPolyDataConnectivityFilter.h>
 
+#include <QElapsedTimer>
 #include <algorithm>
 #include <cstdint>
 #include <pcl/filters/impl/extract_indices.hpp>
@@ -655,8 +656,10 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         transform->Identity();
         return transform;
     }
+    QElapsedTimer stepTimer;
+    stepTimer.start();
 
-    qDebug() << "sealing internals";
+    qDebug() << "Morphological closing " << stepTimer.restart();
     float closingRadius = 3.0f;
     float morphRes = 0.5f;
 
@@ -672,6 +675,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_entire_jaw.ply",
     //     *morphTargetEntireJaw);
 
+    qDebug() << "stl cropping" << stepTimer.restart();
     vtkSmartPointer<vtkPolyData> croppedSourceMesh =
         cropStlInVtk(sourceStl, 8.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr newCroppedPcl =
@@ -680,6 +684,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/new_cropped_source.ply",
         *newCroppedPcl);
 
+    qDebug() << "target extract teeth region" << stepTimer.restart();
     // auto croppedSource = extractTeethRegion(pclSource, false, 8.0f);
     auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 8.0f);
     // pcl::io::savePLYFileASCII(
@@ -694,6 +699,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     float normalRadius = 2.0f;
     float featureRadius = 4.5f;
 
+    qDebug() << "downsamling" << stepTimer.restart();
     auto sourceDown = downsampleCloud(newCroppedPcl, voxelLeafSize);
     auto targetDown = downsampleCloud(croppedTarget, voxelLeafSize);
 
@@ -708,11 +714,12 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     auto targetNormals = estimateNormals(targetDown, normalRadius);
     // C. fpfh feature extraction
 
-    qDebug() << "Extracting FPFH ...";
+    qDebug() << "Extracting FPFH ..." << stepTimer.restart();
     auto sourceFPFH = computeFPFH(sourceNormals, featureRadius);
     auto targetFPFH = computeFPFH(targetNormals, featureRadius);
 
-    qDebug() << "Executing RANSAC on Purified Point Cloud...";
+    qDebug() << "Executing RANSAC on Purified Point Cloud..."
+             << stepTimer.restart();
     float maxCorrespDist = 15.0f;
     // pcl::io::savePLYFileASCII(
     //     "C:/Users/igrs/Desktop/Aswin/ImageRegistration/ransac_actual_target.ply",
@@ -729,7 +736,8 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     auto icpSource = convertVtkToPcl(restrictSourceMesh);
     auto icpTarget = extractTeethRegion(pclEnamel, true, 3.0f);
 
-    qDebug() << "Generating high-fidelity point to plane normal map...";
+    qDebug() << "Generating high-fidelity point to plane normal map..."
+             << stepTimer.restart();
     float highFidelityNormalRadius = 1.5f;
     auto fineSourceNormals =
         estimateNormals(newCroppedPcl, highFidelityNormalRadius);
@@ -738,15 +746,16 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
 
     // 2. Generate the DECIMATED Macro-Map (Used for High-Speed Magnet
     // alignment)
-    qDebug()
-        << "Generating decimated normals for high-speed macro alignment...";
+    qDebug() << "Generating decimated normals for high-speed macro alignment..."
+             << stepTimer.restart();
     float coarseLeafSize = 1.0f;  // Eliminates massive calculation overhead
     auto coarseSource = downsampleCloud(icpSource, coarseLeafSize);
     auto coarseTarget = downsampleCloud(icpTarget, coarseLeafSize);
     auto coarseSourceNormals =
         estimateNormals(coarseSource, 2.0f);  // Moderate normal search
     auto coarseTargetNormals = estimateNormals(coarseTarget, 2.0f);
-    qDebug() << "Initiating Multi-Resolution Cascaded ICP...";
+    qDebug() << "Initiating Multi-Resolution Cascaded ICP..."
+             << stepTimer.restart();
     vtkSmartPointer<vtkMatrix4x4> absoluteLockedTransform =
         performICPWithNormals(coarseSourceNormals, coarseTargetNormals,
                               fineSourceNormals, fineTargetNormals,

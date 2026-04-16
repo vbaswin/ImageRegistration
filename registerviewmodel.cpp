@@ -24,6 +24,11 @@ vtkSmartPointer<vtkPolyData> RegisterViewModel::getSurfaceData(double contourVal
     return m_dataLoader->getSurfaceData(contourValue);
 }
 
+vtkSmartPointer<vtkPolyData> RegisterViewModel::getRawSurfaceData(
+    double contourValue) {
+    return m_dataLoader->getRawSurfaceData(contourValue);
+}
+
 vtkSmartPointer<vtkVolumeProperty> RegisterViewModel::getVolProps()
 {
     return m_dataLoader->getVolProps();
@@ -38,9 +43,11 @@ vtkSmartPointer<vtkMatrix4x4> RegisterViewModel::performRegistration(double isoV
 {
     // qDebug() << "Inside p"
     vtkSmartPointer<vtkPolyData> sourceStl = getStlData();
-    vtkSmartPointer<vtkPolyData> targetSurface = getSurfaceData(isoValue);
+    vtkSmartPointer<vtkPolyData> targetEnamel = getSurfaceData(isoValue);
+    vtkSmartPointer<vtkPolyData> targetEntireJaw = getRawSurfaceData(400.0);
 
-    return m_regModel->computeTransform(sourceStl, targetSurface);
+    return m_regModel->computeTransform(sourceStl, targetEnamel,
+                                        targetEntireJaw);
 }
 
 void RegisterViewModel::loadTestingDataset(int index) {
@@ -57,5 +64,5 @@ void RegisterViewModel::runDiagnosticCropTest() {
 
     // Safely asks the Engine layer to perform its job and dump it to the debug
     // folder
-    m_regModel->saveDiagnosticCrop(sourceStl, debugPath);
+    // m_regModel->saveDiagnosticCrop(sourceStl, debugPath);
 }

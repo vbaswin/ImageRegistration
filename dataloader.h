@@ -28,8 +28,10 @@ public:
     // bool loadCbct(QString &filePath);
     vtkSmartPointer<vtkPolyData> getStlData();
     vtkSmartPointer<vtkImageData> getDicomData();
+    vtkSmartPointer<vtkImageData> getDicomDataNoFilter();
     vtkSmartPointer<vtkVolumeProperty> getVolProps();
 
+    vtkSmartPointer<vtkPolyData> getRawSurfaceData(double contourValue);
     vtkSmartPointer<vtkPolyData> getSurfaceData(double contourValue);
     vtkSmartPointer<vtkProperty> getSurfaceProps();
 signals:
@@ -39,6 +41,7 @@ signals:
 private:
     vtkSmartPointer<vtkPolyData> m_stlData;
     vtkSmartPointer<vtkImageData> m_dicomData;
+    vtkSmartPointer<vtkImageData> m_dicomDataNoFilter;
 
     vtkNew<vtkSTLReader> m_stlReader;
     vtkNew<vtkDICOMReader> m_dicomReader;

@@ -24,12 +24,14 @@
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/surface/mls.h>
+#include <vtkFeatureEdges.h>
 #include <vtkPolyDataConnectivityFilter.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <pcl/filters/impl/extract_indices.hpp>
 #include <queue>
+#include <unordered_set>
 #include <vector>
 
 RegistrationModel::RegistrationModel(QObject *parent)
@@ -322,9 +324,6 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractTeethRegion(
     // ==========================================================
     // PHASE 2: The "Disposable Compass" Quarantine
     // ==========================================================
-    // We apply this to BOTH STL and CBCT. It safely amputates ramus hinges and
-    // ragged STL palate borders, giving RANSAC a pristine U-shaped front arch
-    // to aim at.
     pcl::PointCloud<pcl::PointXYZ>::Ptr coreCloud(
         new pcl::PointCloud<pcl::PointXYZ>());
 
@@ -579,15 +578,71 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performICPWithNormals(
     return finalVtkTrans;
 }
 
+pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractByProximityMask(
+    pcl::PointCloud<pcl::PointXYZ>::Ptr maskCloud,
+    pcl::PointCloud<pcl::PointXYZ>::Ptr targetSolidCloud, float searchRadius) {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr extractedCloud(
+        new pcl::PointCloud<pcl::PointXYZ>());
+
+    // Safety check
+    if (!maskCloud || maskCloud->empty() || !targetSolidCloud ||
+        targetSolidCloud->empty()) {
+        qWarning() << "Invalid clouds provided to Proximity Extractor.";
+        return extractedCloud;
+    }
+
+    // 1. Build KD-Tree Dict on the High-Resolution Solid Cloud
+    pcl::search::KdTree<pcl::PointXYZ> kdtree;
+    kdtree.setInputCloud(targetSolidCloud);
+
+    // 2. Prevent duplicate points using an unordered_set (Massive Speed Gain)
+    std::unordered_set<int> uniqueIndices;
+
+    // 3. Cast the 3D 'Shrink-wrap' net from the Mask onto the Solid
+    for (const auto& pt : maskCloud->points) {
+        std::vector<int> pointIdxRadiusSearch;
+        std::vector<float> pointRadiusDistance;
+
+        // If the solid point is near the mask point, capture it
+        if (kdtree.radiusSearch(pt, searchRadius, pointIdxRadiusSearch,
+                                pointRadiusDistance) > 0) {
+            for (int idx : pointIdxRadiusSearch) {
+                uniqueIndices.insert(idx);
+            }
+        }
+    }
+
+    // 4. Convert gathered indices to strictly ordered PCL format
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+    inliers->indices.assign(uniqueIndices.begin(), uniqueIndices.end());
+    std::sort(inliers->indices.begin(), inliers->indices.end());
+
+    // 5. Mathematically extract the flawless geometry
+    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    extract.setInputCloud(targetSolidCloud);
+    extract.setIndices(inliers);
+    extract.setNegative(false);  // Retain intercepted points
+    extract.filter(*extractedCloud);
+
+    return extractedCloud;
+}
+
 vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     vtkSmartPointer<vtkPolyData> sourceStl,
-    vtkSmartPointer<vtkPolyData> targetSurface) {
+    vtkSmartPointer<vtkPolyData> targetEnamel,
+    vtkSmartPointer<vtkPolyData> targetEntireJaw) {
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclSource = convertVtkToPcl(sourceStl);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr pclTarget = convertVtkToPcl(targetSurface);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr pclEnamel =
+        convertVtkToPcl(targetEnamel);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr pclEntireJaw =
+        convertVtkToPcl(targetEntireJaw);
 
     pcl::io::savePLYFileASCII(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_target.ply",
-        *pclTarget);
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_enamel.ply",
+        *pclEnamel);
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_entire_jaw.ply",
+        *pclEntireJaw);
     pcl::io::savePLYFileASCII(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_source.ply",
         *pclSource);
@@ -595,7 +650,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     vtkSmartPointer<vtkMatrix4x4> transform = vtkSmartPointer<vtkMatrix4x4>::New();
     transform->Identity();
 
-    if (pclSource->points.empty() || pclTarget->points.empty()) {
+    if (pclSource->points.empty() || pclEnamel->points.empty()) {
         vtkSmartPointer<vtkMatrix4x4> transform = vtkSmartPointer<vtkMatrix4x4>::New();
         transform->Identity();
         return transform;
@@ -605,11 +660,17 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     float closingRadius = 3.0f;
     float morphRes = 0.5f;
 
-    auto solidTarget =
-        applyMorphologicalClosing(pclTarget, closingRadius, morphRes);
+    auto morphTargetEnamel =
+        applyMorphologicalClosing(pclEnamel, closingRadius, morphRes);
     pcl::io::savePLYFileASCII(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/solid_target.ply",
-        *solidTarget);
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_enamel.ply",
+        *morphTargetEnamel);
+    auto morphTargetEntireJaw =
+        applyMorphologicalClosing(pclEntireJaw, 3.0f, 0.5f);
+
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_entire_jaw.ply",
+        *morphTargetEntireJaw);
 
     vtkSmartPointer<vtkPolyData> croppedSourceMesh =
         cropStlInVtk(sourceStl, 10.0f);
@@ -620,7 +681,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         *newCroppedPcl);
 
     // auto croppedSource = extractTeethRegion(pclSource, false, 8.0f);
-    auto croppedTarget = extractTeethRegion(solidTarget, true, 8.0f);
+    auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 8.0f);
     // pcl::io::savePLYFileASCII(
     //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
     //     *croppedSource);
@@ -666,7 +727,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     vtkSmartPointer<vtkPolyData> restrictSourceMesh =
         cropStlInVtk(sourceStl, 3.0f);
     auto icpSource = convertVtkToPcl(restrictSourceMesh);
-    auto icpTarget = extractTeethRegion(pclTarget, true, 3.0f);
+    auto icpTarget = extractTeethRegion(pclEnamel, true, 3.0f);
 
     qDebug() << "Generating high-fidelity point to plane normal map...";
     float highFidelityNormalRadius = 1.5f;
@@ -791,11 +852,67 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
     alignFilter->Update();
 
     vtkSmartPointer<vtkPolyData> alignedMesh = alignFilter->GetOutput();
+
+    // ==========================================================
+    // 3.5 Topological Border Polarity Fix (Density-Independent)
+    // ==========================================================
+    // Rather than relying on point density, we rely on pure topology.
+    // The only massive "open edge" in an intraoral optical scan is the
+    // gum-line scanner boundary. The teeth are a watertight surface.
+    vtkSmartPointer<vtkFeatureEdges> edgeExtractor =
+        vtkSmartPointer<vtkFeatureEdges>::New();
+    edgeExtractor->SetInputData(alignedMesh);
+    edgeExtractor->BoundaryEdgesOn();  // Extract the open rim
+    edgeExtractor->FeatureEdgesOff();
+    edgeExtractor->NonManifoldEdgesOff();
+    edgeExtractor->ManifoldEdgesOff();
+    edgeExtractor->Update();
+
+    vtkPolyData* boundaries = edgeExtractor->GetOutput();
+    vtkIdType numBoundaryPts = boundaries->GetNumberOfPoints();
+
+    // If numBoundaryPts == 0, it's a fully closed solid model, meaning
+    // the Gauss Integration worked natively and we do not intervene.
+    if (numBoundaryPts > 50) {
+        double currentBounds[6];
+        alignedMesh->GetBounds(currentBounds);
+        double zMid = (currentBounds[4] + currentBounds[5]) / 2.0;
+
+        double meanBoundaryZ = 0.0;
+        for (vtkIdType i = 0; i < numBoundaryPts; ++i) {
+            double p[3];
+            boundaries->GetPoint(i, p);
+            meanBoundaryZ += p[2];
+        }
+        meanBoundaryZ /= static_cast<double>(numBoundaryPts);
+
+        // If the open boundary (the gum skirt) is physically higher than the
+        // center of the bounding box, the teeth are definitively upside down.
+        if (meanBoundaryZ > zMid) {
+            vtkSmartPointer<vtkTransform> flipTransform =
+                vtkSmartPointer<vtkTransform>::New();
+            flipTransform->PostMultiply();
+            flipTransform->RotateX(180.0);  // 180° Right-Handed inversion
+
+            vtkSmartPointer<vtkTransformPolyDataFilter> flipFilter =
+                vtkSmartPointer<vtkTransformPolyDataFilter>::New();
+            flipFilter->SetInputData(alignedMesh);
+            flipFilter->SetTransform(flipTransform);
+            flipFilter->Update();
+
+            alignedMesh = flipFilter->GetOutput();
+
+            // Mathematically append for Phase 6 unwrap
+            transform->RotateX(180.0);
+        }
+    }
+
     // ==========================================================
     // 4. "Dropping the Plane" to Isolate Teeth for PCA
     // ==========================================================
     double bounds[6];  // [xmin, xmax, ymin, ymax, zmin, zmax]
     alignedMesh->GetBounds(bounds);
+
     double const initialMaxZ = bounds[5];
     double const zSpan = bounds[5] - bounds[4];
 

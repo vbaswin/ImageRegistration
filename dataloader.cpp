@@ -191,6 +191,8 @@ bool DataLoader::loadDicom(QString &folderPath)
 
     m_dicomReader->SetFileNames(fileNames);
     m_dicomReader->Update();
+
+    m_dicomDataNoFilter = m_dicomReader->GetOutput();
     // --- Teeth Isolation Guardrail ---
     m_thresholder = vtkSmartPointer<vtkImageThreshold>::New();
     m_thresholder->SetInputConnection(m_dicomReader->GetOutputPort());
@@ -254,6 +256,10 @@ void DataLoader::loadTestingDataset(int index) {
             testPatientStl = "ashish upper";
             testPatientCbct = "Ashish 1 op/Maxilla";
             break;
+        case 5:
+            testPatientStl = "parveen lower";
+            testPatientCbct = "Parveen lower";
+            break;
         default:
             return;  // Fail fast pattern
     }
@@ -276,6 +282,10 @@ vtkSmartPointer<vtkPolyData> DataLoader::getStlData()
 vtkSmartPointer<vtkImageData> DataLoader::getDicomData()
 {
     return m_dicomData;
+}
+
+vtkSmartPointer<vtkImageData> DataLoader::getDicomDataNoFilter() {
+    return m_dicomDataNoFilter;
 }
 
 vtkSmartPointer<vtkVolumeProperty> DataLoader::getVolProps()
@@ -325,6 +335,26 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
     m_normalsCalc->Update();
     return m_normalsCalc->GetOutput();
     // return m_isoAlgo->GetOutput();
+}
+
+vtkSmartPointer<vtkPolyData> DataLoader::getRawSurfaceData(
+    double contourValue) {
+    // WARNING: We must use a secondary vtkFlyingEdges3D instance here
+    // or properly re-route the existing one so they do not overwrite each
+    // other.
+    vtkNew<vtkFlyingEdges3D> rawIsoAlgo;
+    rawIsoAlgo->SetInputData(
+        m_dicomDataNoFilter);  // bypassed the HU threshold!
+    rawIsoAlgo->SetValue(0, contourValue);
+    rawIsoAlgo->Update();
+
+    vtkNew<vtkPolyDataNormals> rawNormals;
+    rawNormals->SetInputConnection(rawIsoAlgo->GetOutputPort());
+    rawNormals->ComputePointNormalsOn();
+    rawNormals->ConsistencyOn();
+    rawNormals->Update();
+
+    return rawNormals->GetOutput();
 }
 
 vtkSmartPointer<vtkProperty> DataLoader::getSurfaceProps()

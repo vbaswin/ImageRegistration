@@ -28,7 +28,8 @@ public:
 
     vtkSmartPointer<vtkMatrix4x4> computeTransform(
         vtkSmartPointer<vtkPolyData> sourceStl,
-        vtkSmartPointer<vtkPolyData> targetSurface);
+        vtkSmartPointer<vtkPolyData> targetEnamel,
+        vtkSmartPointer<vtkPolyData> targetEntireJaw);
 
     void saveDiagnosticCrop(vtkSmartPointer<vtkPolyData> inputStl,
                             const QString& outputPath);
@@ -52,6 +53,12 @@ public:
 
     pcl::PointCloud<pcl::FPFHSignature33>::Ptr computeFPFH(
         pcl::PointCloud<pcl::PointNormal>::Ptr cloudWithNormals, float featureRadius);
+
+    // Precision KD-Tree Spatial Extraction
+    pcl::PointCloud<pcl::PointXYZ>::Ptr extractByProximityMask(
+        pcl::PointCloud<pcl::PointXYZ>::Ptr maskCloud,
+        pcl::PointCloud<pcl::PointXYZ>::Ptr targetSolidCloud,
+        float searchRadius);
 
     vtkSmartPointer<vtkMatrix4x4> performRANSAC(
         pcl::PointCloud<pcl::PointNormal>::Ptr sourceNormals,

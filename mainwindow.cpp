@@ -40,7 +40,7 @@ void MainWindow::setupUI()
     m_datasetCombo = new QComboBox(m_rightControlsWidget);
     m_datasetCombo->addItems({"SAIFI (Iso: -999)", "Vijaya Upper (Iso: 1)",
                               "Rajeev Lower (Iso: 1)", "Unknown (Iso: 1)",
-                              "Ashish Upper (Iso: 1)"});
+                              "Ashish Upper (Iso: 1)", "Parveen Lower"});
     // m_datasetCombo->
 
     m_isoSlider = new QSlider(Qt::Horizontal, m_rightControlsWidget);

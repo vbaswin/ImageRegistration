@@ -682,7 +682,9 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
 
     qDebug() << "stl cropping" << stepTimer.restart();
     vtkSmartPointer<vtkPolyData> croppedSourceMesh =
-        cropStlInVtk(sourceStl, 8.0f);
+        // cropStlInVtk(sourceStl, 8.0f);
+        cropStlInVtk(sourceStl, 10.0f);
+    // cropStlInVtk(sourceStl, 14.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr newCroppedPcl =
         convertVtkToPcl(croppedSourceMesh);
     pcl::io::savePLYFileASCII(
@@ -690,8 +692,8 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         *newCroppedPcl);
 
     qDebug() << "target extract teeth region" << stepTimer.restart();
-    // auto croppedSource = extractTeethRegion(pclSource, false, 8.0f);
-    auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 8.0f);
+    auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 6.0f);
+    // auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 4.0f);
     // pcl::io::savePLYFileASCII(
     //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
     //     *croppedSource);

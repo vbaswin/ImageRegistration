@@ -207,7 +207,12 @@ RegistrationModel::applyMorphologicalClosing(
     // STEP 1: DILATION
     int radiusVoxel =
         static_cast<int>(std::ceil(closingRadius / voxelResolution));
-    for (const auto& v : occupiedList) {
+
+    int numOccupied = occupiedList.size();
+
+#pragma omp parallel for
+    for (int i = 0; i < numOccupied; ++i) {
+        const auto& v = occupiedList[i];
         for (int dx = -radiusVoxel; dx <= radiusVoxel; ++dx) {
             for (int dy = -radiusVoxel; dy <= radiusVoxel; ++dy) {
                 for (int dz = -radiusVoxel; dz <= radiusVoxel; ++dz) {

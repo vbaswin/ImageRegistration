@@ -198,7 +198,7 @@ bool DataLoader::loadDicom(QString &folderPath)
     m_thresholder->SetInputConnection(m_dicomReader->GetOutputPort());
     // Isolate dense structures. (Empirically adjust 1500 for your specific
     // CBCT calibration)
-    m_thresholder->ThresholdBetween(1700.0, 6000.0);
+    m_thresholder->ThresholdBetween(1500.0, 6000.0);
     // We replace the outside tissue with -1000 (Air). We keep the inside
     // teeth
     // as their original HU values. This prevents severe "staircasing" in

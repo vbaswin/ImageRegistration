@@ -664,37 +664,55 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     QElapsedTimer stepTimer;
     stepTimer.start();
 
+    // ==========================================================
+    // 1. ISOLATE: Pre-Crop the Inner Core to remove deep roots.
+    // ==========================================================
+    qDebug() << "Pre-cropping Inner Enamel to remove roots..."
+             << stepTimer.restart();
+    auto rootlessInnerCrowns = extractTeethRegion(pclEnamel, true, 8.0f);
+
+    // ==========================================================
+    // 2. MASK: Use only the rootless crowns as the spatial magnet
+    // ==========================================================
+    qDebug() << "Extracting Outer Teeth Boundary via Proximity... "
+             << stepTimer.restart();
+    float proxyRadius = 3.0f;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr outerTeethSurface =
+        extractByProximityMask(rootlessInnerCrowns, pclEntireJaw, proxyRadius);
+
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/extracted_outer_teeth.ply",
+        *outerTeethSurface);
+
+    // ==========================================================
+    // 3. MORPHOLOGY: Seal the newly extracted outer shell
+    // ==========================================================
     qDebug() << "Morphological closing " << stepTimer.restart();
     float closingRadius = 3.0f;
     float morphRes = 0.5f;
 
-    auto morphTargetEnamel =
-        applyMorphologicalClosing(pclEnamel, closingRadius, morphRes);
+    auto croppedTarget =
+        applyMorphologicalClosing(outerTeethSurface, closingRadius, morphRes);
+
     pcl::io::savePLYFileASCII(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_enamel.ply",
-        *morphTargetEnamel);
-    // auto morphTargetEntireJaw =
-    //     applyMorphologicalClosing(pclEntireJaw, 3.0f, 0.5f);
+        *croppedTarget);
 
-    // pcl::io::savePLYFileASCII(
-    //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_entire_jaw.ply",
-    //     *morphTargetEntireJaw);
-
+    // ==========================================================
+    // 4. PRESERVED STL CROPPING
+    // ==========================================================
     qDebug() << "stl cropping" << stepTimer.restart();
     vtkSmartPointer<vtkPolyData> croppedSourceMesh =
         cropStlInVtk(sourceStl, 8.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr newCroppedPcl =
         convertVtkToPcl(croppedSourceMesh);
+
     pcl::io::savePLYFileASCII(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/new_cropped_source.ply",
         *newCroppedPcl);
 
-    qDebug() << "target extract teeth region" << stepTimer.restart();
-    // auto croppedSource = extractTeethRegion(pclSource, false, 8.0f);
-    auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 8.0f);
-    // pcl::io::savePLYFileASCII(
-    //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
-    //     *croppedSource);
+    // NOTE: We bypass calling extractTeethRegion on the target again because
+    // `croppedTarget` is already perfectly confined to the crowns by the mask!
     pcl::io::savePLYFileASCII(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_target.ply",
         *croppedTarget);
@@ -739,7 +757,12 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     vtkSmartPointer<vtkPolyData> restrictSourceMesh =
         cropStlInVtk(sourceStl, 3.0f);
     auto icpSource = convertVtkToPcl(restrictSourceMesh);
-    auto icpTarget = extractTeethRegion(pclEnamel, true, 3.0f);
+
+    // CRITICAL: Apply "Crop First, Mask Second" principle to the high-precision
+    // tips
+    auto rootlessICPInner = extractTeethRegion(pclEnamel, true, 3.0f);
+    auto icpTarget =
+        extractByProximityMask(rootlessICPInner, pclEntireJaw, 3.0f);
 
     qDebug() << "Generating high-fidelity point to plane normal map..."
              << stepTimer.restart();

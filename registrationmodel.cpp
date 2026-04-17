@@ -691,8 +691,17 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/new_cropped_source.ply",
         *newCroppedPcl);
 
+    qDebug() << "Executing Diagnostic KD-Tree Jaw Extraction..."
+             << stepTimer.restart();
+
     qDebug() << "target extract teeth region" << stepTimer.restart();
     auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 6.0f);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr kdtreeJawOutput =
+        extractByProximityMask(croppedTarget, pclEntireJaw, 3.0f);
+    pcl::io::savePLYFileASCII(
+        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/diagnostic_kdtree_jaw.ply",
+        *kdtreeJawOutput);
     // auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 4.0f);
     // pcl::io::savePLYFileASCII(
     //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
@@ -708,7 +717,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
 
     qDebug() << "downsamling" << stepTimer.restart();
     auto sourceDown = downsampleCloud(newCroppedPcl, voxelLeafSize);
-    auto targetDown = downsampleCloud(croppedTarget, voxelLeafSize);
+    auto targetDown = downsampleCloud(kdtreeJawOutput, voxelLeafSize);
 
     pcl::io::savePLYFileASCII(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/down_source.ply",

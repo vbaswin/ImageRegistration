@@ -33,6 +33,8 @@ public:
 
     void saveDiagnosticCrop(vtkSmartPointer<vtkPolyData> inputStl,
                             const QString& outputPath);
+    void saveDiagnosticPointCloud(const std::string& filename,
+                                  const pcl::PointCloud<pcl::PointXYZ>& cloud);
 
    private:
     vtkSmartPointer<vtkPolyData> cropStlInVtk(

@@ -27,6 +27,7 @@
 #include <vtkFeatureEdges.h>
 #include <vtkPolyDataConnectivityFilter.h>
 
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <algorithm>
 #include <cstdint>
@@ -643,13 +644,13 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclEntireJaw =
         convertVtkToPcl(targetEntireJaw);
 
-    pcl::io::savePLYFileASCII(
+    saveDiagnosticPointCloud(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_enamel.ply",
         *pclEnamel);
-    pcl::io::savePLYFileASCII(
+    saveDiagnosticPointCloud(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_entire_jaw.ply",
         *pclEntireJaw);
-    pcl::io::savePLYFileASCII(
+    saveDiagnosticPointCloud(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_source.ply",
         *pclSource);
 
@@ -670,7 +671,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
 
     auto morphTargetEnamel =
         applyMorphologicalClosing(pclEnamel, closingRadius, morphRes);
-    pcl::io::savePLYFileASCII(
+    saveDiagnosticPointCloud(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_enamel.ply",
         *morphTargetEnamel);
     // auto morphTargetEntireJaw =
@@ -682,12 +683,12 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
 
     qDebug() << "stl cropping" << stepTimer.restart();
     vtkSmartPointer<vtkPolyData> croppedSourceMesh =
-        // cropStlInVtk(sourceStl, 8.0f);
-        cropStlInVtk(sourceStl, 10.0f);
+        cropStlInVtk(sourceStl, 6.0f);
+    // cropStlInVtk(sourceStl, 10.0f);
     // cropStlInVtk(sourceStl, 14.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr newCroppedPcl =
         convertVtkToPcl(croppedSourceMesh);
-    pcl::io::savePLYFileASCII(
+    saveDiagnosticPointCloud(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/new_cropped_source.ply",
         *newCroppedPcl);
 
@@ -695,18 +696,18 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
              << stepTimer.restart();
 
     qDebug() << "target extract teeth region" << stepTimer.restart();
-    auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 6.0f);
+    auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 4.0f);
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr kdtreeJawOutput =
-        extractByProximityMask(croppedTarget, pclEntireJaw, 3.0f);
-    pcl::io::savePLYFileASCII(
+        extractByProximityMask(croppedTarget, pclEntireJaw, 2.0f);
+    saveDiagnosticPointCloud(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/diagnostic_kdtree_jaw.ply",
         *kdtreeJawOutput);
     // auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 4.0f);
     // pcl::io::savePLYFileASCII(
     //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
     //     *croppedSource);
-    pcl::io::savePLYFileASCII(
+    saveDiagnosticPointCloud(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_target.ply",
         *croppedTarget);
 
@@ -719,10 +720,10 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     auto sourceDown = downsampleCloud(newCroppedPcl, voxelLeafSize);
     auto targetDown = downsampleCloud(kdtreeJawOutput, voxelLeafSize);
 
-    pcl::io::savePLYFileASCII(
+    saveDiagnosticPointCloud(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/down_source.ply",
         *sourceDown);
-    pcl::io::savePLYFileASCII(
+    saveDiagnosticPointCloud(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/down_target.ply",
         *targetDown);
 
@@ -1037,9 +1038,21 @@ void RegistrationModel::saveDiagnosticCrop(
     // Confined entirely inside the Math model
     vtkSmartPointer<vtkPolyData> croppedMesh = cropStlInVtk(inputStl, 8.0f);
 
-    vtkSmartPointer<vtkSTLWriter> writer = vtkSmartPointer<vtkSTLWriter>::New();
-    writer->SetFileName(outputPath.toUtf8().constData());
-    writer->SetInputData(croppedMesh);
-    writer->Write();
-    qDebug() << "Diagnostic VTK Crop cleanly saved to:" << outputPath;
+    if (QCoreApplication::arguments().contains("--debug-files")) {
+        vtkSmartPointer<vtkSTLWriter> writer =
+            vtkSmartPointer<vtkSTLWriter>::New();
+        writer->SetFileName(outputPath.toUtf8().constData());
+        writer->SetInputData(croppedMesh);
+        writer->Write();
+        qDebug() << "Diagnostic VTK Crop cleanly saved to:" << outputPath;
+    }
+}
+
+void RegistrationModel::saveDiagnosticPointCloud(
+    const std::string& filename, const pcl::PointCloud<pcl::PointXYZ>& cloud) {
+    if (QCoreApplication::arguments().contains("--debug-files")) {
+        pcl::io::savePLYFileASCII(filename, cloud);
+        // qDebug() << "Exported Diagnostic PointCloud:"
+        // << QString::fromStdString(filename);
+    }
 }

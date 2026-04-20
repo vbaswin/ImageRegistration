@@ -35,7 +35,9 @@ void MainWindow::setupUI()
     hLayout->addWidget(m_rightControlsWidget, 1);
 
     m_autoRegisterBtn = new QPushButton("Auto Register", m_rightControlsWidget);
+    m_selectPointsBtn = new QPushButton("Select Points", m_rightControlsWidget);
     m_autoRegisterBtn->setCheckable(true);
+    m_selectPointsBtn->setCheckable(true);
 
     m_datasetCombo = new QComboBox(m_rightControlsWidget);
     m_datasetCombo->addItems({"SAIFI (Iso: -999)", "Vijaya Upper (Iso: 1)",

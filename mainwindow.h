@@ -36,6 +36,7 @@ public slots:
     QWidget *m_rightControlsWidget = nullptr;
     QSlider *m_isoSlider = nullptr;
     QPushButton *m_autoRegisterBtn = nullptr;
+    QPushButton* m_selectPointsBtn = nullptr;
     QComboBox* m_datasetCombo;
 
     vtkNew<vtkGenericOpenGLRenderWindow> m_renderWindow;

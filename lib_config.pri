@@ -22,11 +22,15 @@ CONFIG += release force_debug_info
 # QMAKE_CXXFLAGS_RELEASE -= /O2 /O1          # Strip default release optimizations
 # QMAKE_CXXFLAGS_RELEASE += /Od /Zi          # No-opt + full debug symbols
 # QMAKE_LFLAGS_RELEASE    += /DEBUG          # Linker emits .pdb for the executable
-# Strip optimizations from BOTH flag sets that force_debug_info uses
+# Strip optimizations from BOTH flag sets that force_debug_info uses.
+# Use /Z7 instead of -Zi so parallel compilation does not contend for one
+# ImageRegistration.vc.pdb compiler database.
 # QMAKE_CXXFLAGS_RELEASE                  -= /O2 /O1
-QMAKE_CXXFLAGS_RELEASE_WITH_DEBUGINFO   -= /O2 /O1
+QMAKE_CFLAGS_RELEASE_WITH_DEBUGINFO     -= -O2 /O2 -O1 /O1 -Zi /Zi
+QMAKE_CXXFLAGS_RELEASE_WITH_DEBUGINFO   -= -O2 /O2 -O1 /O1 -Zi /Zi
 # QMAKE_CXXFLAGS_RELEASE                  += /Od
-QMAKE_CXXFLAGS_RELEASE_WITH_DEBUGINFO   += /Od
+QMAKE_CFLAGS_RELEASE_WITH_DEBUGINFO     += /Z7 /FS
+QMAKE_CXXFLAGS_RELEASE_WITH_DEBUGINFO   += /Od /Z7 /FS
 QMAKE_LFLAGS_RELEASE                    += /DEBUG
 
 DEFINES	+= QT_DEPRECATED_WARNINGS
@@ -56,6 +60,7 @@ LIBS += \
 -lvtkIOImage-8.2 \
 -lvtkIOCore-8.2 \
 -lvtkImagingCore-8.2 \
+-lvtkImagingGeneral-8.2 \
 -lvtkImagingColor-8.2 \
 -lvtkInteractionWidgets-8.2 \
 -lvtkFiltersCore-8.2 \
@@ -108,3 +113,18 @@ LIBS += -lpcl_common \
 # ***** forces to use 32  bit alignment but pre-built pcl uses 16 bits
 # cauisng crashes
 # QMAKE_CXXFLAGS += /arch:AVX2
+
+TEASER_ROOT = C:/Users/igrs/Desktop/Aswin/ext_libs/TEASER-plusplus
+
+INCLUDEPATH += $$TEASER_ROOT/install/include
+
+QMAKE_LIBDIR += $$TEASER_ROOT/build/teaser/Release
+QMAKE_LIBDIR += $$TEASER_ROOT/build/_deps/pmc-build/Release
+
+LIBS += \
+    -lteaser_registration \
+    -lteaser_features \
+    -lteaser_io \
+    -lpmc
+
+

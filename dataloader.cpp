@@ -72,8 +72,9 @@ DataLoader::DataLoader(QObject *parent)
     m_isoProp->SetOpacity(1.0);
     m_isoProp->SetAmbient(0.1);
     m_isoProp->SetDiffuse(0.8);
-    m_isoProp->SetSpecular(0.4);
-    m_isoProp->SetSpecularPower(50.0);
+    m_isoProp->SetSpecular(0.25);
+    m_isoProp->SetSpecularPower(35.0);
+    m_isoProp->SetInterpolationToPhong();
 
     // loadStl(stlFilePath);
     // loadDicom(dicomFolderPath);
@@ -296,41 +297,35 @@ vtkSmartPointer<vtkVolumeProperty> DataLoader::getVolProps()
 
 vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
 {
-    // m_isoAlgo->SetInputConnection(m_dicomReader->GetOutputPort());
-    m_isoAlgo->SetInputConnection(m_thresholder->GetOutputPort());
+    // Anti-alias the thresholded volume before contouring. This keeps the
+    // extraction detail, but removes most of the voxel stair-step texture that
+    // heavy mesh smoothing would otherwise have to blur away afterwards.
+    m_surfaceAntiAliasFilter->SetInputConnection(m_thresholder->GetOutputPort());
+    m_surfaceAntiAliasFilter->SetDimensionality(3);
+    m_surfaceAntiAliasFilter->SetStandardDeviations(0.45, 0.45, 0.30);
+    m_surfaceAntiAliasFilter->SetRadiusFactors(1.25, 1.25, 1.0);
+
+    m_isoAlgo->SetInputConnection(m_surfaceAntiAliasFilter->GetOutputPort());
     m_isoAlgo->SetValue(0, contourValue);
     m_isoAlgo->Update();
 
-    vtkNew<vtkPolyDataConnectivityFilter> connectivityFilter;
-    connectivityFilter->SetInputConnection((m_isoAlgo->GetOutputPort()));
-    connectivityFilter->SetExtractionModeToLargestRegion();
+    // A light windowed-sinc pass removes extraction chatter without the
+    // over-rounded look caused by low-pass mesh smoothing.
+    m_isoFilter->SetInputConnection(m_isoAlgo->GetOutputPort());
+    m_isoFilter->SetNumberOfIterations(8);
+    m_isoFilter->SetPassBand(0.18);
+    m_isoFilter->BoundarySmoothingOff();
+    m_isoFilter->FeatureEdgeSmoothingOff();
+    m_isoFilter->NonManifoldSmoothingOn();
+    m_isoFilter->NormalizeCoordinatesOn();
 
-
-    // m_isoAlgo->GetOutput();
-    // m_isoFilter->SetInputConnection(connectivityFilter->GetOutputPort());
-
-    // // Higher iterations = more processing time but smoother results. 15-20 is a standard baseline.
-    // m_isoFilter->SetNumberOfIterations(20);
-
-    // // A lower passband value (e.g., 0.001 to 0.1) creates more smoothing (lets lower frequency structures through).
-    // m_isoFilter->SetPassBand(0.01);
-
-    // // Essential flags to prevent mesh distortion and calculation errors
-    // m_isoFilter->BoundarySmoothingOff();
-    // m_isoFilter->FeatureEdgeSmoothingOff();
-    // m_isoFilter->NonManifoldSmoothingOn();
-    // m_isoFilter->NormalizeCoordinatesOn();
-
-    // Update the pipeline from the smoother, not the isoAlgo
-    // m_isoFilter->Update();
-    // return m_isoFilter->GetOutput();
-
-    m_normalsCalc->SetInputConnection(m_isoAlgo->GetOutputPort());
+    m_normalsCalc->SetInputConnection(m_isoFilter->GetOutputPort());
     m_normalsCalc->SetFeatureAngle(
         60.0); // Smooths angles below 60 degrees, preserves sharp structural edges above
     m_normalsCalc->ComputePointNormalsOn();
     m_normalsCalc->ComputeCellNormalsOff();
     m_normalsCalc->ConsistencyOn(); // Enforces identical ordering for consistent outer lighting
+    m_normalsCalc->AutoOrientNormalsOn();
     m_normalsCalc->SplittingOff();
 
     m_normalsCalc->Update();

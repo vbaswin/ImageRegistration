@@ -2,6 +2,7 @@
 #include <vtkColorTransferFunction.h>
 #include <vtkDICOMDirectory.h>
 #include <vtkDICOMReader.h>
+#include <vtkImageGaussianSmooth.h>
 #include <vtkImageData.h>
 #include <vtkImageThreshold.h>
 #include <vtkPiecewiseFunction.h>
@@ -52,6 +53,7 @@ private:
     vtkSmartPointer<vtkVolumeProperty> m_prop;
 
     // isosurface extraction
+    vtkNew<vtkImageGaussianSmooth> m_surfaceAntiAliasFilter;
     vtkNew<vtkFlyingEdges3D> m_isoAlgo;
     vtkSmartPointer<vtkProperty> m_isoProp;
     vtkNew<vtkWindowedSincPolyDataFilter> m_isoFilter;

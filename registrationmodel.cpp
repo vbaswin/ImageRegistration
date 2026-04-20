@@ -24,12 +24,16 @@
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/surface/mls.h>
+#include <teaser/fpfh.h>
+#include <teaser/matcher.h>
+#include <teaser/registration.h>
 #include <vtkFeatureEdges.h>
 #include <vtkPolyDataConnectivityFilter.h>
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <pcl/filters/impl/extract_indices.hpp>
 #include <queue>
@@ -112,8 +116,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performRANSAC(
     pcl::PointCloud<pcl::PointNormal>::Ptr targetNormals,
     pcl::PointCloud<pcl::FPFHSignature33>::Ptr sourceFeatures,
     pcl::PointCloud<pcl::FPFHSignature33>::Ptr targetFeatures,
-    float maxCorrespondenceDistance)
-{
+    float maxCorrespondenceDistance) {
     pcl::SampleConsensusInitialAlignment<pcl::PointNormal, pcl::PointNormal, pcl::FPFHSignature33>
         sac_ia;
 
@@ -140,6 +143,121 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performRANSAC(
 
     return vtkTrans;
 }
+
+static teaser::PointCloud convertPclToTeaserCloud(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) {
+    teaser::PointCloud teaserCloud;
+    if (!cloud) return teaserCloud;
+
+    teaserCloud.reserve(cloud->size());
+
+    for (const auto& point : cloud->points) {
+        if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+            !std::isfinite(point.z)) {
+            continue;
+        }
+
+        teaserCloud.push_back({point.x, point.y, point.z});
+    }
+
+    return teaserCloud;
+}
+
+vtkSmartPointer<vtkMatrix4x4> RegistrationModel::performTEASER(
+    pcl::PointCloud<pcl::PointXYZ>::Ptr sourceCloud,
+    pcl::PointCloud<pcl::PointXYZ>::Ptr targetCloud, double normalSearchRadius,
+    double fpfhSearchRadius, double noiseBound) {
+    vtkSmartPointer<vtkMatrix4x4> vtkTrans =
+        vtkSmartPointer<vtkMatrix4x4>::New();
+    vtkTrans->Identity();
+
+    if (!sourceCloud || !targetCloud || sourceCloud->empty() ||
+        targetCloud->empty()) {
+        qWarning() << "TEASER input cloud empty.";
+        return vtkTrans;
+    }
+
+    teaser::PointCloud teaserSource = convertPclToTeaserCloud(sourceCloud);
+    teaser::PointCloud teaserTarget = convertPclToTeaserCloud(targetCloud);
+
+    if (teaserSource.empty() || teaserTarget.empty()) {
+        qWarning() << "TEASER converted cloud empty.";
+        return vtkTrans;
+    }
+
+    QElapsedTimer teaserTimer;
+    teaserTimer.start();
+
+    teaser::FPFHEstimation fpfh;
+    auto sourceFeatures = fpfh.computeFPFHFeatures(
+        teaserSource, normalSearchRadius, fpfhSearchRadius);
+    auto targetFeatures = fpfh.computeFPFHFeatures(
+        teaserTarget, normalSearchRadius, fpfhSearchRadius);
+
+    qDebug() << "TEASER FPFH time:" << teaserTimer.restart() << "ms";
+
+    teaser::Matcher matcher;
+    std::vector<std::pair<int, int>> correspondences =
+        matcher.calculateCorrespondences(
+            teaserSource, teaserTarget, *sourceFeatures, *targetFeatures,
+            true,   // use absolute millimeter scale
+            true,   // cross-check matches
+            false,  // tuple test off for first A/B test
+            0.95f);
+
+    qDebug() << "TEASER correspondences:"
+             << static_cast<int>(correspondences.size());
+
+    if (correspondences.size() < 6) {
+        qWarning() << "Too few TEASER correspondences.";
+        return vtkTrans;
+    }
+
+    teaser::RobustRegistrationSolver::Params params;
+    params.noise_bound = noiseBound;
+    params.cbar2 = 1.0;
+    params.estimate_scaling = false;
+    params.rotation_estimation_algorithm = teaser::RobustRegistrationSolver::
+        ROTATION_ESTIMATION_ALGORITHM::GNC_TLS;
+    params.rotation_gnc_factor = 1.4;
+    params.rotation_max_iterations = 100;
+    params.rotation_cost_threshold = 0.005;
+
+    // Heuristic clique is much faster than exact clique for this first test.
+    params.inlier_selection_mode =
+        teaser::RobustRegistrationSolver::INLIER_SELECTION_MODE::PMC_HEU;
+    params.max_clique_time_limit = 2.0;
+    params.max_clique_num_threads = 4;
+
+    teaser::RobustRegistrationSolver solver(params);
+    teaser::RegistrationSolution solution =
+        solver.solve(teaserSource, teaserTarget, correspondences);
+
+    qDebug() << "TEASER solve time:" << teaserTimer.restart() << "ms";
+    qDebug() << "TEASER translation inliers:"
+             << static_cast<int>(solver.getTranslationInliers().size());
+
+    if (!solution.valid) {
+        qWarning() << "TEASER solution invalid.";
+        return vtkTrans;
+    }
+
+    Eigen::Matrix4d eigenTransform = Eigen::Matrix4d::Identity();
+    eigenTransform.block<3, 3>(0, 0) = solution.rotation;
+    eigenTransform.block<3, 1>(0, 3) = solution.translation;
+
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            vtkTrans->SetElement(i, j, eigenTransform(i, j));
+        }
+    }
+
+    qDebug() << "TEASER translation:" << solution.translation.x()
+             << solution.translation.y() << solution.translation.z();
+
+    return vtkTrans;
+}
+
 // Custom Hash to allow 2D grid mapping natively in C++ standard library
 struct GridHash
 {
@@ -727,6 +845,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         "C:/Users/igrs/Desktop/Aswin/ImageReg_output/down_target.ply",
         *targetDown);
 
+    /*
     auto sourceNormals = estimateNormals(sourceDown, normalRadius);
     auto targetNormals = estimateNormals(targetDown, normalRadius);
     // C. fpfh feature extraction
@@ -739,13 +858,16 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
              << stepTimer.restart();
     float maxCorrespDist = 15.0f;
     // pcl::io::savePLYFileASCII(
-    //     "C:/Users/igrs/Desktop/Aswin/ImageRegistration/ransac_actual_target.ply",
+    // "C:/Users/igrs/Desktop/Aswin/ImageRegistration/ransac_actual_target.ply",
     //     *filteredTargetNormals);
     vtkSmartPointer<vtkMatrix4x4> ransacTransform = performRANSAC(sourceNormals,
-                                                                  targetNormals,
-                                                                  sourceFPFH,
-                                                                  targetFPFH,
-                                                                  maxCorrespDist);
+*/
+    qDebug() << "Executing TEASER++ on Purified Point Cloud..."
+             << stepTimer.restart();
+
+    vtkSmartPointer<vtkMatrix4x4> ransacTransform =
+        performTEASER(sourceDown, targetDown, normalRadius, featureRadius, 5.0);
+
     // immediately calculate their precision normals for the ICP engine.
     // auto icpSource = extractTeethRegion(pclSource, false, 3.0f);
     vtkSmartPointer<vtkPolyData> restrictSourceMesh =

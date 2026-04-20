@@ -61,6 +61,10 @@ public:
         pcl::PointCloud<pcl::PointXYZ>::Ptr maskCloud,
         pcl::PointCloud<pcl::PointXYZ>::Ptr targetSolidCloud,
         float searchRadius);
+    vtkSmartPointer<vtkMatrix4x4> performTEASER(
+        pcl::PointCloud<pcl::PointXYZ>::Ptr sourceCloud,
+        pcl::PointCloud<pcl::PointXYZ>::Ptr targetCloud,
+        double normalSearchRadius, double fpfhSearchRadius, double noiseBound);
 
     vtkSmartPointer<vtkMatrix4x4> performRANSAC(
         pcl::PointCloud<pcl::PointNormal>::Ptr sourceNormals,

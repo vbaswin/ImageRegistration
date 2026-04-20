@@ -801,7 +801,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
 
     qDebug() << "stl cropping" << stepTimer.restart();
     vtkSmartPointer<vtkPolyData> croppedSourceMesh =
-        cropStlInVtk(sourceStl, 6.0f);
+        cropStlInVtk(sourceStl, 8.0f);
     // cropStlInVtk(sourceStl, 10.0f);
     // cropStlInVtk(sourceStl, 14.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr newCroppedPcl =
@@ -814,7 +814,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
              << stepTimer.restart();
 
     qDebug() << "target extract teeth region" << stepTimer.restart();
-    auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 4.0f);
+    auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 8.0f);
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr kdtreeJawOutput =
         extractByProximityMask(croppedTarget, pclEntireJaw, 2.0f);

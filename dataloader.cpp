@@ -300,26 +300,27 @@ vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
     // Anti-alias the thresholded volume before contouring. This keeps the
     // extraction detail, but removes most of the voxel stair-step texture that
     // heavy mesh smoothing would otherwise have to blur away afterwards.
-    m_surfaceAntiAliasFilter->SetInputConnection(m_thresholder->GetOutputPort());
-    m_surfaceAntiAliasFilter->SetDimensionality(3);
-    m_surfaceAntiAliasFilter->SetStandardDeviations(0.45, 0.45, 0.30);
-    m_surfaceAntiAliasFilter->SetRadiusFactors(1.25, 1.25, 1.0);
+    // m_surfaceAntiAliasFilter->SetInputConnection(m_thresholder->GetOutputPort());
+    // m_surfaceAntiAliasFilter->SetDimensionality(3);
+    // m_surfaceAntiAliasFilter->SetStandardDeviations(0.45, 0.45, 0.30);
+    // m_surfaceAntiAliasFilter->SetRadiusFactors(1.25, 1.25, 1.0);
 
-    m_isoAlgo->SetInputConnection(m_surfaceAntiAliasFilter->GetOutputPort());
+    // m_isoAlgo->SetInputConnection(m_surfaceAntiAliasFilter->GetOutputPort());
+    m_isoAlgo->SetInputConnection(m_thresholder->GetOutputPort());
     m_isoAlgo->SetValue(0, contourValue);
     m_isoAlgo->Update();
 
     // A light windowed-sinc pass removes extraction chatter without the
     // over-rounded look caused by low-pass mesh smoothing.
-    m_isoFilter->SetInputConnection(m_isoAlgo->GetOutputPort());
-    m_isoFilter->SetNumberOfIterations(8);
-    m_isoFilter->SetPassBand(0.18);
-    m_isoFilter->BoundarySmoothingOff();
-    m_isoFilter->FeatureEdgeSmoothingOff();
-    m_isoFilter->NonManifoldSmoothingOn();
-    m_isoFilter->NormalizeCoordinatesOn();
+    // m_isoFilter->SetInputConnection(m_isoAlgo->GetOutputPort());
+    // m_isoFilter->SetNumberOfIterations(8);
+    // m_isoFilter->SetPassBand(0.18);
+    // m_isoFilter->BoundarySmoothingOff();
+    // m_isoFilter->FeatureEdgeSmoothingOff();
+    // m_isoFilter->NonManifoldSmoothingOn();
+    // m_isoFilter->NormalizeCoordinatesOn();
 
-    m_normalsCalc->SetInputConnection(m_isoFilter->GetOutputPort());
+    m_normalsCalc->SetInputConnection(m_isoAlgo->GetOutputPort());
     m_normalsCalc->SetFeatureAngle(
         60.0); // Smooths angles below 60 degrees, preserves sharp structural edges above
     m_normalsCalc->ComputePointNormalsOn();

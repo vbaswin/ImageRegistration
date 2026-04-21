@@ -1228,12 +1228,16 @@ void RegistrationModel::calculateRMS() {
         const Point3D transformedStlPoint =
             transformPoint(m_stlPoints[i], stlToCbctTransform);
 
-        sumSquaredDistance +=
+        const double pairSquaredDistance =
             squaredDistance(transformedStlPoint, m_cbctPoints[i]);
-    }
 
+        qDebug() << "Pair: " << i + 1
+                 << " error: " << std::sqrt(pairSquaredDistance);
+
+        sumSquaredDistance += pairSquaredDistance;
+    }
     double rms = std::sqrt(sumSquaredDistance / m_stlPoints.size());
-    qDebug() << "RMS: " << rms;
+    qDebug() << "RMSE: " << rms;
     // clearPoints();
 }
 

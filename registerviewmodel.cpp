@@ -67,6 +67,8 @@ void RegisterViewModel::runDiagnosticCropTest() {
     // m_regModel->saveDiagnosticCrop(sourceStl, debugPath);
 }
 
+void RegisterViewModel::clearPoints() { m_regModel->clearPoints(); }
+
 void RegisterViewModel::calculateRMS() { m_regModel->calculateRMS(); }
 
 void RegisterViewModel::savePoint(std::array<double, 3> newPoint, bool isStl) {

@@ -20,6 +20,7 @@ public:
     void runDiagnosticCropTest();
     void savePoint(std::array<double, 3>, bool);
     void calculateRMS();
+    void clearPoints();
 
     vtkSmartPointer<vtkMatrix4x4> performRegistration(double isoValue);
     void loadTestingDataset(int index);

@@ -44,11 +44,12 @@ public slots:
     void onSelectPointsToggled(bool checked);
 
    private:
+    void resetSelectPointsMode();
     bool eventFilter(QObject* watched, QEvent* event) override;
     bool handlePointSelectionClick(QMouseEvent* mouseEvent);
     void addPointMarker(vtkRenderer* renderer, const double point[3], bool);
     void clearPointMarkers();
-    void applyMarkerRegistration(vtkSmartPointer<vtkMatrix4x4>);
+    void setStlRegistrationState(vtkMatrix4x4* matrix, bool registered);
 
     vtkNew<vtkCellPicker> m_cellPicker;
     std::vector<PointMarker> m_pointMarkers;

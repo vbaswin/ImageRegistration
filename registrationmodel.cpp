@@ -1205,15 +1205,18 @@ double squaredDistance(const Point3D& a, const Point3D& b) {
 
 void RegistrationModel::calculateRMS() {
     if (!m_transformMatrix) {
-        throw std::runtime_error("STL to CBCT transform matrix is null");
+        qDebug() << "Skipping RMS: STL to CBCT transform matrix is null";
+        return;
     }
 
     if (m_stlPoints.size() != m_cbctPoints.size()) {
-        throw std::runtime_error("STL and CBCT point counts do not match");
+        qDebug() << "Skipping RMS: STL and CBCT point counts do not match";
+        return;
     }
 
     if (m_stlPoints.empty()) {
-        throw std::runtime_error("No picked points available");
+        qDebug() << "Skipping RMS: no picked points available";
+        return;
     }
 
     vtkNew<vtkTransform> stlToCbctTransform;
@@ -1231,7 +1234,7 @@ void RegistrationModel::calculateRMS() {
 
     double rms = std::sqrt(sumSquaredDistance / m_stlPoints.size());
     qDebug() << "RMS: " << rms;
-    clearPoints();
+    // clearPoints();
 }
 
 void RegistrationModel::clearPoints() {

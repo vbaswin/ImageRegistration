@@ -184,22 +184,39 @@ void MainWindow::addPointMarker(vtkRenderer* renderer, const double point[3],
 }
 
 void MainWindow::clearPointMarkers() {
+    resetSelectPointsMode();
     for (const auto& marker : m_pointMarkers) {
-        marker.renderer->RemoveActor(marker.actor);
+        m_leftRenderer->RemoveActor(marker.actor);
+        m_rightRenderer->RemoveActor(marker.actor);
     }
 
     m_pointMarkers.clear();
+    m_regVM->clearPoints();
+
     m_renderWindow->Render();
 }
 
-void MainWindow::applyMarkerRegistration(
-    vtkSmartPointer<vtkMatrix4x4> transformMatrix) {
+void MainWindow::setStlRegistrationState(vtkMatrix4x4* matrix,
+                                         bool registered) {
+    vtkRenderer* targetRenderer =
+        registered ? m_rightRenderer.GetPointer() : m_leftRenderer.GetPointer();
+
+    m_leftRenderer->RemoveActor(m_stlActor);
+    m_rightRenderer->RemoveActor(m_stlActor);
+    targetRenderer->AddActor(m_stlActor);
+    m_stlActor->SetUserMatrix(matrix);
+
     for (auto& marker : m_pointMarkers) {
-        if (marker.isStl) {
-            m_leftRenderer->RemoveActor(marker.actor);
-            marker.actor->SetUserMatrix(transformMatrix);
-            m_rightRenderer->AddActor(marker.actor);
+        if (!marker.isStl) {
+            continue;
         }
+
+        m_leftRenderer->RemoveActor(marker.actor);
+        m_rightRenderer->RemoveActor(marker.actor);
+
+        marker.actor->SetUserMatrix(matrix);
+        targetRenderer->AddActor(marker.actor);
+        marker.renderer = targetRenderer;
     }
 }
 
@@ -228,6 +245,7 @@ void MainWindow::setupData() {
     m_renderWindow->Render();
 }
 void MainWindow::onDatasetChanged(int index) {
+    resetSelectPointsMode();
     clearPointMarkers();
     // 1. Tell ViewModel to load new datasets into VTK stream
     m_regVM->loadTestingDataset(index);
@@ -261,38 +279,36 @@ void MainWindow::onSliderChanged(int val)
     m_renderWindow->Render();
     // m_rightRenderer->Render();
 }
+void MainWindow::resetSelectPointsMode() {
+    m_selectPointsMode = false;
 
-void MainWindow::onAutoRegisterClicked(bool checked)
-{
+    if (m_selectPointsBtn && m_selectPointsBtn->isChecked()) {
+        m_selectPointsBtn->setChecked(false);
+    }
+}
+
+void MainWindow::onAutoRegisterClicked(bool checked) {
+    resetSelectPointsMode();
+    vtkNew<vtkMatrix4x4> identityMatrix;
+    identityMatrix->Identity();
+
     if (checked) {
-        m_leftRenderer->RemoveActor(m_stlActor);
-        m_rightRenderer->AddActor(m_stlActor);
-
-        // m_currentIso = -999
-        // m_dicomSurfaceMapper->SetInputData(
-        //     m_regVM->getSurfaceData(m_currentIso));
+        setStlRegistrationState(identityMatrix.GetPointer(), false);
 
         QElapsedTimer timer;
         timer.start();
+
         vtkSmartPointer<vtkMatrix4x4> transformMatrix =
             m_regVM->performRegistration(m_currentIso);
 
-        // --- STOP PROFILING ---
         qDebug() << "Execution Time:" << timer.elapsed() / 1000.0 << "s.";
 
-        m_stlActor->SetUserMatrix(transformMatrix);
-        applyMarkerRegistration(transformMatrix);
+        setStlRegistrationState(transformMatrix.GetPointer(), true);
         m_regVM->calculateRMS();
 
     } else {
-        m_rightRenderer->RemoveActor(m_stlActor);
-        m_leftRenderer->AddActor(m_stlActor);
-
-        vtkNew<vtkMatrix4x4> identityMatrix;
-        identityMatrix->Identity();
-        m_stlActor->SetUserMatrix(identityMatrix); // undo registration
-
-        clearPointMarkers();
+        setStlRegistrationState(identityMatrix.GetPointer(), false);
     }
+
     m_renderWindow->Render();
 }

@@ -1,7 +1,11 @@
 #include "mainwindow.h"
 
+#include <vtkSphereSource.h>
+
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QHBoxLayout>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QSlider>
 
@@ -17,6 +21,10 @@ MainWindow::MainWindow(std::shared_ptr<RegisterViewModel> rVM, QWidget *parent)
     connect(m_autoRegisterBtn, &QPushButton::toggled, this, &MainWindow::onAutoRegisterClicked);
     connect(m_datasetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onDatasetChanged);
+    connect(m_selectPointsBtn, &QPushButton::toggled, this,
+            &MainWindow::onSelectPointsToggled);
+    connect(m_clearSelectPointsBtn, &QPushButton::clicked, this,
+            &MainWindow::clearPointMarkers);
 }
 
 MainWindow::~MainWindow() {}
@@ -36,6 +44,8 @@ void MainWindow::setupUI()
 
     m_autoRegisterBtn = new QPushButton("Auto Register", m_rightControlsWidget);
     m_selectPointsBtn = new QPushButton("Select Points", m_rightControlsWidget);
+    m_clearSelectPointsBtn =
+        new QPushButton("Clear Points", m_rightControlsWidget);
     m_autoRegisterBtn->setCheckable(true);
     m_selectPointsBtn->setCheckable(true);
 
@@ -57,9 +67,13 @@ void MainWindow::setupUI()
 
     vLayout->addWidget(m_datasetCombo);
     vLayout->addWidget(m_autoRegisterBtn);
+    vLayout->addWidget(m_selectPointsBtn);
+    vLayout->addWidget(m_clearSelectPointsBtn);
     vLayout->addWidget(m_isoSlider);
 
     m_vtkWidget->SetRenderWindow(m_renderWindow);
+    m_vtkWidget->installEventFilter(this);
+    m_cellPicker->SetTolerance(0.005);
 
     m_renderWindow->AddRenderer(m_leftRenderer);
     m_renderWindow->AddRenderer(m_rightRenderer);
@@ -79,8 +93,102 @@ void MainWindow::setupUI()
     m_currentIso = 400;
 }
 
-void MainWindow::setupData()
-{
+void MainWindow::onSelectPointsToggled(bool checked) {
+    m_selectPointsMode = checked;
+    qDebug() << "Select points mode: " << (checked ? "ON" : "OFF");
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_vtkWidget && m_selectPointsMode &&
+        event->type() == QEvent::MouseButtonPress) {
+        auto* mouseEvent = static_cast<QMouseEvent*>(event);
+
+        if (mouseEvent->button() == Qt::LeftButton) {
+            return handlePointSelectionClick(mouseEvent);
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
+bool MainWindow::handlePointSelectionClick(QMouseEvent* mouseEvent) {
+    const int x = mouseEvent->pos().x();
+    const int y = m_vtkWidget->height() - mouseEvent->pos().y() - 1;
+
+    vtkRenderWindowInteractor* interactor = m_renderWindow->GetInteractor();
+
+    if (!interactor) {
+        qDebug() << "No vtk interactor found";
+        return true;
+    }
+
+    vtkRenderer* renderer = interactor->FindPokedRenderer(x, y);
+    if (!renderer) {
+        qDebug() << "No renderer found at click.";
+        return true;
+    }
+
+    const int picked = m_cellPicker->Pick(x, y, 0.0, renderer);
+
+    if (!picked) {
+        qDebug() << "No surface picked.";
+        return true;
+    }
+
+    vtkActor* pickedActor = m_cellPicker->GetActor();
+    if (pickedActor != m_stlActor.GetPointer() &&
+        pickedActor != m_dicomActor.GetPointer()) {
+        qDebug() << "Picked actor is not STL or CBCT.";
+        return true;
+    }
+
+    double point[3];
+    m_cellPicker->GetPickPosition(point);
+
+    addPointMarker(renderer, point);
+
+    qDebug() << "Picked point: " << point[0] << point[1] << point[2];
+
+    m_renderWindow->Render();
+    return true;
+}
+
+void MainWindow::addPointMarker(vtkRenderer* renderer, const double point[3]) {
+    vtkSmartPointer<vtkSphereSource> sphere =
+        vtkSmartPointer<vtkSphereSource>::New();
+
+    sphere->SetCenter(point[0], point[1], point[2]);
+    sphere->SetRadius(1.0);
+    sphere->SetThetaResolution(16);
+    sphere->SetPhiResolution(16);
+    sphere->Update();
+
+    vtkSmartPointer<vtkPolyDataMapper> mapper =
+        vtkSmartPointer<vtkPolyDataMapper>::New();
+    mapper->SetInputConnection(sphere->GetOutputPort());
+
+    vtkSmartPointer<vtkActor> marker = vtkSmartPointer<vtkActor>::New();
+
+    marker->SetMapper(mapper);
+    marker->GetProperty()->SetColor(0.0, 1.0, 0.0);
+    marker->GetProperty()->SetAmbient(0.4);
+    marker->GetProperty()->SetDiffuse(0.8);
+
+    renderer->AddActor(marker);
+    m_pointMarkers.push_back({marker, renderer});
+}
+
+void MainWindow::clearPointMarkers() {
+    for (const auto& marker : m_pointMarkers) {
+        if (marker.renderer) {
+            marker.renderer->RemoveActor(marker.actor);
+        }
+    }
+
+    m_pointMarkers.clear();
+    m_renderWindow->Render();
+}
+
+void MainWindow::setupData() {
     // m_stlPolyData = m_regVM->getStlData();
     m_stlMapper->SetInputData(m_regVM->getStlData());
     m_stlActor->SetMapper(m_stlMapper);
@@ -105,6 +213,7 @@ void MainWindow::setupData()
     m_renderWindow->Render();
 }
 void MainWindow::onDatasetChanged(int index) {
+    clearPointMarkers();
     // 1. Tell ViewModel to load new datasets into VTK stream
     m_regVM->loadTestingDataset(index);
 

@@ -1,6 +1,12 @@
 #pragma once
 #include <QVTKOpenGLNativeWidget.h>
+#include <vtkActor.h>
+#include <vtkCellPicker.h>
 #include <vtkGPUVolumeRayCastMapper.h>
+#include <vtkProperty.h>
+#include <vtkRenderWindowInteractor.h>.h>
+#include <vtkSmartPointer.h>
+#include <vtkSphereSource.h>
 
 #include <QComboBox>
 #include <QMainWindow>
@@ -14,6 +20,11 @@
 #include "vtkImageData.h"
 #include "vtkPolyDataMapper.h"
 #include "vtkRenderer.h"
+
+struct PointMarker {
+    vtkSmartPointer<vtkActor> actor;
+    vtkRenderer* renderer = nullptr;
+};
 
 class MainWindow : public QMainWindow
 {
@@ -29,14 +40,26 @@ public slots:
     void onSliderChanged(int val);
     void onAutoRegisterClicked(bool checked);
     void onDatasetChanged(int index);
+    void onSelectPointsToggled(bool checked);
 
    private:
-    QWidget *m_container = nullptr;
+    bool eventFilter(QObject* watched, QEvent* event) override;
+    bool handlePointSelectionClick(QMouseEvent* mouseEvent);
+    void addPointMarker(vtkRenderer* renderer, const double point[3]);
+    void clearPointMarkers();
+
+    vtkNew<vtkCellPicker> m_cellPicker;
+    std::vector<PointMarker> m_pointMarkers;
+
+    bool m_selectPointsMode = false;
+
+    QWidget* m_container = nullptr;
     QVTKOpenGLNativeWidget *m_vtkWidget = nullptr;
     QWidget *m_rightControlsWidget = nullptr;
     QSlider *m_isoSlider = nullptr;
     QPushButton *m_autoRegisterBtn = nullptr;
     QPushButton* m_selectPointsBtn = nullptr;
+    QPushButton* m_clearSelectPointsBtn = nullptr;
     QComboBox* m_datasetCombo;
 
     vtkNew<vtkGenericOpenGLRenderWindow> m_renderWindow;

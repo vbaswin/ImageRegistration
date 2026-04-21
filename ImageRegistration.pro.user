@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 18.0.1, 2026-04-20T15:48:00. -->
+<!-- Written by QtCreator 18.0.1, 2026-04-20T18:38:40. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -244,7 +244,7 @@
      <valuelist type="QVariantList" key="CustomOutputParsers"/>
      <value type="int" key="PE.EnvironmentAspect.Base">2</value>
      <valuelist type="QVariantList" key="PE.EnvironmentAspect.Changes">
-      <value type="QString">Path+=C:\Users\igrs\Desktop\Aswin\ext_libs\VTK8.2\Release\bin\;C:\Users\igrs\Desktop\Aswin\ext_libs\ITK-5.4.5\Release\bin; \Users\igrs\Desktop\Aswin\ext_libs\TEASER-plusplus\build\teaser\Release</value>
+      <value type="QString">Path+=C:\Users\igrs\Desktop\Aswin\ext_libs\VTK8.2\Release\bin\;C:\Users\igrs\Desktop\Aswin\ext_libs\ITK-5.4.5\Release\bin;C:\Users\igrs\Desktop\Aswin\ext_libs\TEASER-plusplus\build\teaser\Release</value>
      </valuelist>
      <value type="bool" key="PE.EnvironmentAspect.PrintOnRun">false</value>
      <value type="QString" key="PerfRecordArgsId">-e cpu-cycles --call-graph &quot;dwarf,4096&quot; -F 250</value>
@@ -309,7 +309,7 @@
     <valuelist type="QVariantList" key="CustomOutputParsers"/>
     <value type="int" key="PE.EnvironmentAspect.Base">2</value>
     <valuelist type="QVariantList" key="PE.EnvironmentAspect.Changes">
-     <value type="QString">Path+=C:\Users\igrs\Desktop\Aswin\ext_libs\VTK8.2\Release\bin\;C:\Users\igrs\Desktop\Aswin\ext_libs\ITK-5.4.5\Release\bin; \Users\igrs\Desktop\Aswin\ext_libs\TEASER-plusplus\build\teaser\Release</value>
+     <value type="QString">Path+=C:\Users\igrs\Desktop\Aswin\ext_libs\VTK8.2\Release\bin\;C:\Users\igrs\Desktop\Aswin\ext_libs\ITK-5.4.5\Release\bin;C:\Users\igrs\Desktop\Aswin\ext_libs\TEASER-plusplus\build\teaser\Release</value>
     </valuelist>
     <value type="bool" key="PE.EnvironmentAspect.PrintOnRun">false</value>
     <value type="QString" key="PerfRecordArgsId">-e cpu-cycles --call-graph &quot;dwarf,4096&quot; -F 250</value>

@@ -1205,17 +1205,17 @@ double squaredDistance(const Point3D& a, const Point3D& b) {
 
 void RegistrationModel::calculateRMS() {
     if (!m_transformMatrix) {
-        qDebug() << "Skipping RMS: STL to CBCT transform matrix is null";
+        qDebug() << "Skipping RMSE: STL to CBCT transform matrix is null";
         return;
     }
 
     if (m_stlPoints.size() != m_cbctPoints.size()) {
-        qDebug() << "Skipping RMS: STL and CBCT point counts do not match";
+        qDebug() << "Skipping RMSE: STL and CBCT point counts do not match";
         return;
     }
 
     if (m_stlPoints.empty()) {
-        qDebug() << "Skipping RMS: no picked points available";
+        qDebug() << "Skipping RMSE: no picked points available";
         return;
     }
 

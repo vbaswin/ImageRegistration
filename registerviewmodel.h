@@ -18,6 +18,8 @@ public:
     vtkSmartPointer<vtkVolumeProperty> getVolProps();
     vtkSmartPointer<vtkProperty> getSurfaceProps();
     void runDiagnosticCropTest();
+    void savePoint(std::array<double, 3>, bool);
+    void calculateRMS();
 
     vtkSmartPointer<vtkMatrix4x4> performRegistration(double isoValue);
     void loadTestingDataset(int index);

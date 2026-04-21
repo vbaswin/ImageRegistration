@@ -134,17 +134,22 @@ bool MainWindow::handlePointSelectionClick(QMouseEvent* mouseEvent) {
         return true;
     }
 
+    bool isStl = true;
     vtkActor* pickedActor = m_cellPicker->GetActor();
-    if (pickedActor != m_stlActor.GetPointer() &&
-        pickedActor != m_dicomActor.GetPointer()) {
-        qDebug() << "Picked actor is not STL or CBCT.";
-        return true;
+    if (pickedActor != m_stlActor.GetPointer()) {
+        isStl = false;
+
+        if (pickedActor != m_dicomActor.GetPointer()) {
+            qDebug() << "Picked actor is not STL or CBCT.";
+            return true;
+        }
     }
 
     double point[3];
     m_cellPicker->GetPickPosition(point);
 
-    addPointMarker(renderer, point);
+    addPointMarker(renderer, point, isStl);
+    m_regVM->savePoint({point[0], point[1], point[2]}, isStl);
 
     qDebug() << "Picked point: " << point[0] << point[1] << point[2];
 
@@ -152,7 +157,8 @@ bool MainWindow::handlePointSelectionClick(QMouseEvent* mouseEvent) {
     return true;
 }
 
-void MainWindow::addPointMarker(vtkRenderer* renderer, const double point[3]) {
+void MainWindow::addPointMarker(vtkRenderer* renderer, const double point[3],
+                                bool isStl) {
     vtkSmartPointer<vtkSphereSource> sphere =
         vtkSmartPointer<vtkSphereSource>::New();
 
@@ -174,18 +180,27 @@ void MainWindow::addPointMarker(vtkRenderer* renderer, const double point[3]) {
     marker->GetProperty()->SetDiffuse(0.8);
 
     renderer->AddActor(marker);
-    m_pointMarkers.push_back({marker, renderer});
+    m_pointMarkers.push_back({marker, renderer, isStl});
 }
 
 void MainWindow::clearPointMarkers() {
     for (const auto& marker : m_pointMarkers) {
-        if (marker.renderer) {
-            marker.renderer->RemoveActor(marker.actor);
-        }
+        marker.renderer->RemoveActor(marker.actor);
     }
 
     m_pointMarkers.clear();
     m_renderWindow->Render();
+}
+
+void MainWindow::applyMarkerRegistration(
+    vtkSmartPointer<vtkMatrix4x4> transformMatrix) {
+    for (auto& marker : m_pointMarkers) {
+        if (marker.isStl) {
+            m_leftRenderer->RemoveActor(marker.actor);
+            marker.actor->SetUserMatrix(transformMatrix);
+            m_rightRenderer->AddActor(marker.actor);
+        }
+    }
 }
 
 void MainWindow::setupData() {
@@ -266,6 +281,8 @@ void MainWindow::onAutoRegisterClicked(bool checked)
         qDebug() << "Execution Time:" << timer.elapsed() / 1000.0 << "s.";
 
         m_stlActor->SetUserMatrix(transformMatrix);
+        applyMarkerRegistration(transformMatrix);
+        m_regVM->calculateRMS();
 
     } else {
         m_rightRenderer->RemoveActor(m_stlActor);
@@ -274,6 +291,8 @@ void MainWindow::onAutoRegisterClicked(bool checked)
         vtkNew<vtkMatrix4x4> identityMatrix;
         identityMatrix->Identity();
         m_stlActor->SetUserMatrix(identityMatrix); // undo registration
+
+        clearPointMarkers();
     }
     m_renderWindow->Render();
 }

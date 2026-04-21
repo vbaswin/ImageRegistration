@@ -46,8 +46,8 @@ vtkSmartPointer<vtkMatrix4x4> RegisterViewModel::performRegistration(double isoV
     vtkSmartPointer<vtkPolyData> targetEnamel = getSurfaceData(isoValue);
     vtkSmartPointer<vtkPolyData> targetEntireJaw = getRawSurfaceData(400.0);
 
-    return m_regModel->computeTransform(sourceStl, targetEnamel,
-                                        targetEntireJaw);
+    m_regModel->computeTransform(sourceStl, targetEnamel, targetEntireJaw);
+    return m_regModel->getTransformMatrix();
 }
 
 void RegisterViewModel::loadTestingDataset(int index) {
@@ -65,4 +65,10 @@ void RegisterViewModel::runDiagnosticCropTest() {
     // Safely asks the Engine layer to perform its job and dump it to the debug
     // folder
     // m_regModel->saveDiagnosticCrop(sourceStl, debugPath);
+}
+
+void RegisterViewModel::calculateRMS() { m_regModel->calculateRMS(); }
+
+void RegisterViewModel::savePoint(std::array<double, 3> newPoint, bool isStl) {
+    m_regModel->savePoints(newPoint, isStl);
 }

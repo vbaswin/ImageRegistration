@@ -24,6 +24,7 @@
 struct PointMarker {
     vtkSmartPointer<vtkActor> actor;
     vtkRenderer* renderer = nullptr;
+    bool isStl;
 };
 
 class MainWindow : public QMainWindow
@@ -45,8 +46,9 @@ public slots:
    private:
     bool eventFilter(QObject* watched, QEvent* event) override;
     bool handlePointSelectionClick(QMouseEvent* mouseEvent);
-    void addPointMarker(vtkRenderer* renderer, const double point[3]);
+    void addPointMarker(vtkRenderer* renderer, const double point[3], bool);
     void clearPointMarkers();
+    void applyMarkerRegistration(vtkSmartPointer<vtkMatrix4x4>);
 
     vtkNew<vtkCellPicker> m_cellPicker;
     std::vector<PointMarker> m_pointMarkers;

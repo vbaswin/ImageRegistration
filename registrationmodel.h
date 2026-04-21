@@ -26,17 +26,25 @@ class RegistrationModel : public QObject {
 public:
     explicit RegistrationModel(QObject *parent = nullptr);
 
-    vtkSmartPointer<vtkMatrix4x4> computeTransform(
-        vtkSmartPointer<vtkPolyData> sourceStl,
-        vtkSmartPointer<vtkPolyData> targetEnamel,
-        vtkSmartPointer<vtkPolyData> targetEntireJaw);
+    void computeTransform(vtkSmartPointer<vtkPolyData> sourceStl,
+                          vtkSmartPointer<vtkPolyData> targetEnamel,
+                          vtkSmartPointer<vtkPolyData> targetEntireJaw);
 
     void saveDiagnosticCrop(vtkSmartPointer<vtkPolyData> inputStl,
                             const QString& outputPath);
     void saveDiagnosticPointCloud(const std::string& filename,
                                   const pcl::PointCloud<pcl::PointXYZ>& cloud);
+    void savePoints(std::array<double, 3>, bool isStl);
+    void calculateRMS();
+    void clearPoints();
+    vtkSmartPointer<vtkMatrix4x4> getTransformMatrix();
 
    private:
+    std::vector<std::array<double, 3>> m_stlPoints;
+    std::vector<std::array<double, 3>> m_cbctPoints;
+
+    vtkSmartPointer<vtkMatrix4x4> m_transformMatrix;
+
     vtkSmartPointer<vtkPolyData> cropStlInVtk(
         vtkSmartPointer<vtkPolyData> inputMesh, float extractionThickness);
 

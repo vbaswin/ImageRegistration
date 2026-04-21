@@ -752,7 +752,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractByProximityMask(
     return extractedCloud;
 }
 
-vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
+void RegistrationModel::computeTransform(
     vtkSmartPointer<vtkPolyData> sourceStl,
     vtkSmartPointer<vtkPolyData> targetEnamel,
     vtkSmartPointer<vtkPolyData> targetEntireJaw) {
@@ -778,7 +778,8 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
     if (pclSource->points.empty() || pclEnamel->points.empty()) {
         vtkSmartPointer<vtkMatrix4x4> transform = vtkSmartPointer<vtkMatrix4x4>::New();
         transform->Identity();
-        return transform;
+        // return transform;
+        return;
     }
     QElapsedTimer stepTimer;
     stepTimer.start();
@@ -899,7 +900,7 @@ vtkSmartPointer<vtkMatrix4x4> RegistrationModel::computeTransform(
         performICPWithNormals(coarseSourceNormals, coarseTargetNormals,
                               fineSourceNormals, fineTargetNormals,
                               ransacTransform);
-    return absoluteLockedTransform;
+    m_transformMatrix = absoluteLockedTransform;
 }
 
 vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
@@ -1153,6 +1154,7 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
     restoreFilter->Update();
     return restoreFilter->GetOutput();
 }
+
 void RegistrationModel::saveDiagnosticCrop(
     vtkSmartPointer<vtkPolyData> inputStl, const QString& outputPath) {
     if (!inputStl || inputStl->GetNumberOfPoints() == 0) return;
@@ -1176,5 +1178,71 @@ void RegistrationModel::saveDiagnosticPointCloud(
         pcl::io::savePLYFileASCII(filename, cloud);
         // qDebug() << "Exported Diagnostic PointCloud:"
         // << QString::fromStdString(filename);
+    }
+}
+
+vtkSmartPointer<vtkMatrix4x4> RegistrationModel::getTransformMatrix() {
+    return m_transformMatrix;
+}
+
+using Point3D = std::array<double, 3>;
+
+Point3D transformPoint(const Point3D& point, vtkTransform* transform) {
+    Point3D transformedPoint{};
+
+    transform->TransformPoint(point.data(), transformedPoint.data());
+
+    return transformedPoint;
+}
+
+double squaredDistance(const Point3D& a, const Point3D& b) {
+    const double dx = a[0] - b[0];
+    const double dy = a[1] - b[1];
+    const double dz = a[2] - b[2];
+
+    return dx * dx + dy * dy + dz * dz;
+}
+
+void RegistrationModel::calculateRMS() {
+    if (!m_transformMatrix) {
+        throw std::runtime_error("STL to CBCT transform matrix is null");
+    }
+
+    if (m_stlPoints.size() != m_cbctPoints.size()) {
+        throw std::runtime_error("STL and CBCT point counts do not match");
+    }
+
+    if (m_stlPoints.empty()) {
+        throw std::runtime_error("No picked points available");
+    }
+
+    vtkNew<vtkTransform> stlToCbctTransform;
+    stlToCbctTransform->SetMatrix(m_transformMatrix);
+
+    double sumSquaredDistance = 0.0;
+
+    for (size_t i = 0; i < m_stlPoints.size(); ++i) {
+        const Point3D transformedStlPoint =
+            transformPoint(m_stlPoints[i], stlToCbctTransform);
+
+        sumSquaredDistance +=
+            squaredDistance(transformedStlPoint, m_cbctPoints[i]);
+    }
+
+    double rms = std::sqrt(sumSquaredDistance / m_stlPoints.size());
+    qDebug() << "RMS: " << rms;
+    clearPoints();
+}
+
+void RegistrationModel::clearPoints() {
+    m_stlPoints.clear();
+    m_cbctPoints.clear();
+}
+
+void RegistrationModel::savePoints(std::array<double, 3> newPoint, bool isStl) {
+    if (isStl) {
+        m_stlPoints.push_back(newPoint);
+    } else {
+        m_cbctPoints.push_back(newPoint);
     }
 }

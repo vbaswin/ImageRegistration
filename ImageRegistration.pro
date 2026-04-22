@@ -14,12 +14,15 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     registerviewmodel.cpp \
+    registration/vtkimagesurfaceextractor.cpp \
     registrationmodel.cpp
 
 HEADERS += \
     dataloader.h \
     mainwindow.h \
     registerviewmodel.h \
+    registration/RegistrationTypes.h \
+    registration/vtkimagesurfaceextractor.h \
     registrationmodel.h
 
 # Default rules for deployment.

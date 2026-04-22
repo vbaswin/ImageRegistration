@@ -21,6 +21,7 @@
 #include <QDir>
 #include <QFile>
 
+#include "registration/vtkimagesurfaceextractor.h"
 #include "vtkSmartPointer.h"
 
 // QString testPatientStl = "SAIFI";
@@ -295,63 +296,16 @@ vtkSmartPointer<vtkVolumeProperty> DataLoader::getVolProps()
     return m_prop;
 }
 
-vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue)
-{
-    // Anti-alias the thresholded volume before contouring. This keeps the
-    // extraction detail, but removes most of the voxel stair-step texture that
-    // heavy mesh smoothing would otherwise have to blur away afterwards.
-    // m_surfaceAntiAliasFilter->SetInputConnection(m_thresholder->GetOutputPort());
-    // m_surfaceAntiAliasFilter->SetDimensionality(3);
-    // m_surfaceAntiAliasFilter->SetStandardDeviations(0.45, 0.45, 0.30);
-    // m_surfaceAntiAliasFilter->SetRadiusFactors(1.25, 1.25, 1.0);
-
-    // m_isoAlgo->SetInputConnection(m_surfaceAntiAliasFilter->GetOutputPort());
-    m_isoAlgo->SetInputConnection(m_thresholder->GetOutputPort());
-    m_isoAlgo->SetValue(0, contourValue);
-    m_isoAlgo->Update();
-
-    // A light windowed-sinc pass removes extraction chatter without the
-    // over-rounded look caused by low-pass mesh smoothing.
-    // m_isoFilter->SetInputConnection(m_isoAlgo->GetOutputPort());
-    // m_isoFilter->SetNumberOfIterations(8);
-    // m_isoFilter->SetPassBand(0.18);
-    // m_isoFilter->BoundarySmoothingOff();
-    // m_isoFilter->FeatureEdgeSmoothingOff();
-    // m_isoFilter->NonManifoldSmoothingOn();
-    // m_isoFilter->NormalizeCoordinatesOn();
-
-    m_normalsCalc->SetInputConnection(m_isoAlgo->GetOutputPort());
-    m_normalsCalc->SetFeatureAngle(
-        60.0); // Smooths angles below 60 degrees, preserves sharp structural edges above
-    m_normalsCalc->ComputePointNormalsOn();
-    m_normalsCalc->ComputeCellNormalsOff();
-    m_normalsCalc->ConsistencyOn(); // Enforces identical ordering for consistent outer lighting
-    m_normalsCalc->AutoOrientNormalsOn();
-    m_normalsCalc->SplittingOff();
-
-    m_normalsCalc->Update();
-    return m_normalsCalc->GetOutput();
-    // return m_isoAlgo->GetOutput();
+vtkSmartPointer<vtkPolyData> DataLoader::getSurfaceData(double contourValue) {
+    return ImageRegistration::VtkImageSurfaceExtractor::
+        extractThresholdedSurface(m_dicomDataNoFilter, 1800.0, 6000.0,
+                                  contourValue);
 }
 
 vtkSmartPointer<vtkPolyData> DataLoader::getRawSurfaceData(
     double contourValue) {
-    // WARNING: We must use a secondary vtkFlyingEdges3D instance here
-    // or properly re-route the existing one so they do not overwrite each
-    // other.
-    vtkNew<vtkFlyingEdges3D> rawIsoAlgo;
-    rawIsoAlgo->SetInputData(
-        m_dicomDataNoFilter);  // bypassed the HU threshold!
-    rawIsoAlgo->SetValue(0, contourValue);
-    rawIsoAlgo->Update();
-
-    vtkNew<vtkPolyDataNormals> rawNormals;
-    rawNormals->SetInputConnection(rawIsoAlgo->GetOutputPort());
-    rawNormals->ComputePointNormalsOn();
-    rawNormals->ConsistencyOn();
-    rawNormals->Update();
-
-    return rawNormals->GetOutput();
+    return ImageRegistration::VtkImageSurfaceExtractor::extractRawSurface(
+        m_dicomDataNoFilter, contourValue);
 }
 
 vtkSmartPointer<vtkProperty> DataLoader::getSurfaceProps()

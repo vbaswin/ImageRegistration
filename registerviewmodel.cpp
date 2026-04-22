@@ -38,16 +38,21 @@ vtkSmartPointer<vtkProperty> RegisterViewModel::getSurfaceProps()
 {
     return m_dataLoader->getSurfaceProps();
 }
+ImageRegistration::RegistrationResult RegisterViewModel::performRegistration(
+    double isoValue) {
+    ImageRegistration::RegistrationInput input;
+    input.sourceStl = getStlData();
+    input.targetImage = m_dataLoader->getDicomDataNoFilter();
 
-vtkSmartPointer<vtkMatrix4x4> RegisterViewModel::performRegistration(double isoValue)
-{
-    // qDebug() << "Inside p"
-    vtkSmartPointer<vtkPolyData> sourceStl = getStlData();
-    vtkSmartPointer<vtkPolyData> targetEnamel = getSurfaceData(isoValue);
-    vtkSmartPointer<vtkPolyData> targetEntireJaw = getRawSurfaceData(400.0);
+    ImageRegistration::RegistrationSettings settings;
+    settings.enamelIsoValue = isoValue;
+    settings.fullJawIsoValue = 400.0;
+    settings.thresholdMin = 1800.0;
+    settings.thresholdMax = 6000.0;
+    settings.imageAlreadyThresholded = false;
+    settings.enableDiagnostics = false;
 
-    m_regModel->computeTransform(sourceStl, targetEnamel, targetEntireJaw);
-    return m_regModel->getTransformMatrix();
+    return m_registrationEngine.registerStlToImage(input, settings);
 }
 
 void RegisterViewModel::loadTestingDataset(int index) {

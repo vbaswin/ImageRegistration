@@ -1,6 +1,8 @@
 #pragma once
 #include <QObject>
+
 #include "dataloader.h"
+#include "registration/DentalRegistrationEngine.h"
 #include "registrationmodel.h"
 
 class RegisterViewModel : public QObject
@@ -22,7 +24,7 @@ public:
     void calculateRMS();
     void clearPoints();
 
-    vtkSmartPointer<vtkMatrix4x4> performRegistration(double isoValue);
+    ImageRegistration::RegistrationResult performRegistration(double isoValue);
     void loadTestingDataset(int index);
 
    signals:
@@ -31,4 +33,5 @@ public:
 private:
     std::shared_ptr<DataLoader> m_dataLoader;
     std::shared_ptr<RegistrationModel> m_regModel;
+    ImageRegistration::DentalRegistrationEngine m_registrationEngine;
 };

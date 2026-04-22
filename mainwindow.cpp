@@ -298,12 +298,22 @@ void MainWindow::onAutoRegisterClicked(bool checked) {
         QElapsedTimer timer;
         timer.start();
 
-        vtkSmartPointer<vtkMatrix4x4> transformMatrix =
+        ImageRegistration::RegistrationResult result =
             m_regVM->performRegistration(m_currentIso);
 
         qDebug() << "Execution Time:" << timer.elapsed() / 1000.0 << "s.";
 
-        setStlRegistrationState(transformMatrix.GetPointer(), true);
+        if (!result.success) {
+            qWarning() << "Registration failed:"
+                       << QString::fromStdString(result.message);
+
+            m_autoRegisterBtn->setChecked(false);
+            setStlRegistrationState(identityMatrix.GetPointer(), false);
+            m_renderWindow->Render();
+            return;
+        }
+
+        setStlRegistrationState(result.transformMatrix.GetPointer(), true);
         m_regVM->calculateRMS();
 
     } else {

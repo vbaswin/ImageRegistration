@@ -15,6 +15,7 @@
 #include <memory>
 
 #include "registerviewmodel.h"
+#include "registration/RegistrationTypes.h"
 #include "vtkFlyingEdges3D.h"
 #include "vtkGenericOpenGLRenderWindow.h"
 #include "vtkImageData.h"

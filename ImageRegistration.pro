@@ -14,6 +14,7 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     registerviewmodel.cpp \
+    registration/dentalregistrationengine.cpp \
     registration/vtkimagesurfaceextractor.cpp \
     registrationmodel.cpp
 
@@ -22,6 +23,7 @@ HEADERS += \
     mainwindow.h \
     registerviewmodel.h \
     registration/RegistrationTypes.h \
+    registration/dentalregistrationengine.h \
     registration/vtkimagesurfaceextractor.h \
     registrationmodel.h
 

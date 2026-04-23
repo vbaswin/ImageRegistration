@@ -2,8 +2,8 @@
 
 #include <QString>
 
-#include "../registrationmodel.h"
 #include "VtkImageSurfaceExtractor.h"
+#include "registrationmodel.h"
 
 namespace ImageRegistration {
 namespace {

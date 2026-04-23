@@ -15,8 +15,9 @@ SOURCES += \
     mainwindow.cpp \
     registerviewmodel.cpp \
     registration/dentalregistrationengine.cpp \
+    registration/registrationpointevaluator.cpp \
     registration/vtkimagesurfaceextractor.cpp \
-    registrationmodel.cpp
+    registration/registrationmodel.cpp
 
 HEADERS += \
     dataloader.h \
@@ -24,8 +25,9 @@ HEADERS += \
     registerviewmodel.h \
     registration/RegistrationTypes.h \
     registration/dentalregistrationengine.h \
+    registration/registrationpointevaluator.h \
     registration/vtkimagesurfaceextractor.h \
-    registrationmodel.h
+    registration/registrationmodel.h
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

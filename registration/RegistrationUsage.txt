@@ -1,0 +1,63 @@
+IMAGE REGISTRATION - MINIMAL USAGE
+
+INPUTS
+1. sourceStl
+   Type: vtkSmartPointer<vtkPolyData>
+   Meaning: STL mesh as VTK polydata
+
+2. targetImage
+   Type: vtkSmartPointer<vtkImageData>
+   Meaning: CBCT / volume image as VTK image data
+
+OUTPUT
+1. result.transformMatrix
+   Type: vtkSmartPointer<vtkMatrix4x4>
+   Meaning: final STL-to-image registration transform
+
+2. result.success
+   Type: bool
+   Meaning: true if registration worked
+
+3. result.message
+   Type: std::string
+   Meaning: error or status message
+
+
+MINIMAL CALL
+
+#include "registration/DentalRegistrationEngine.h"
+#include "registration/RegistrationTypes.h"
+
+ImageRegistration::DentalRegistrationEngine engine;
+
+ImageRegistration::RegistrationInput input;
+input.sourceStl = stlPolyData;
+input.targetImage = cbctImageData;
+
+ImageRegistration::RegistrationSettings settings;
+settings.enamelIsoValue = 1800.0;
+settings.fullJawIsoValue = 400.0;
+settings.thresholdMin = 1800.0;
+settings.thresholdMax = 6000.0;
+settings.imageAlreadyThresholded = false;
+settings.enableDiagnostics = false;
+
+ImageRegistration::RegistrationResult result =
+    engine.registerStlToImage(input, settings);
+
+if (result.success) {
+    vtkSmartPointer<vtkMatrix4x4> matrix = result.transformMatrix;
+}
+
+
+SUMMARY
+Pass:
+- STL as vtkPolyData
+- CBCT as vtkImageData
+
+Get:
+- vtkMatrix4x4 transform matrix
+
+Always check:
+- result.success
+- result.message

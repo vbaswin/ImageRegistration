@@ -1,13 +1,8 @@
 #include "registerviewmodel.h"
 
 RegisterViewModel::RegisterViewModel(std::shared_ptr<DataLoader> dl,
-                                     std::shared_ptr<RegistrationModel> regModel,
-
-                                     QObject *parent)
-    : QObject(parent)
-    , m_dataLoader(dl)
-    , m_regModel(regModel)
-{}
+                                     QObject* parent)
+    : QObject(parent), m_dataLoader(dl) {}
 
 vtkSmartPointer<vtkPolyData> RegisterViewModel::getStlData()
 {
@@ -52,7 +47,13 @@ ImageRegistration::RegistrationResult RegisterViewModel::performRegistration(
     settings.imageAlreadyThresholded = false;
     settings.enableDiagnostics = false;
 
-    return m_registrationEngine.registerStlToImage(input, settings);
+    ImageRegistration::RegistrationResult result =
+        m_registrationEngine.registerStlToImage(input, settings);
+
+    m_pointEvaluator.setTransform(
+        result.success ? result.transformMatrix.GetPointer() : nullptr);
+
+    return result;
 }
 
 void RegisterViewModel::loadTestingDataset(int index) {
@@ -71,11 +72,10 @@ void RegisterViewModel::runDiagnosticCropTest() {
     // folder
     // m_regModel->saveDiagnosticCrop(sourceStl, debugPath);
 }
+void RegisterViewModel::clearPoints() { m_pointEvaluator.clearPoints(); }
 
-void RegisterViewModel::clearPoints() { m_regModel->clearPoints(); }
-
-void RegisterViewModel::calculateRMS() { m_regModel->calculateRMS(); }
+void RegisterViewModel::calculateRMS() { m_pointEvaluator.calculateRMS(); }
 
 void RegisterViewModel::savePoint(std::array<double, 3> newPoint, bool isStl) {
-    m_regModel->savePoints(newPoint, isStl);
+    m_pointEvaluator.savePoint(newPoint, isStl);
 }

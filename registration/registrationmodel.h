@@ -38,21 +38,13 @@ public:
                             const QString& outputPath);
     void saveDiagnosticPointCloud(const std::string& filename,
                                   const pcl::PointCloud<pcl::PointXYZ>& cloud);
-    void savePoints(std::array<double, 3>, bool isStl);
-    void calculateRMS();
-    void clearPoints();
     void configureDiagnostics(bool enabled, const QString& outputDirectory);
 
    private:
-    std::vector<std::array<double, 3>> m_stlPoints;
-    std::vector<std::array<double, 3>> m_cbctPoints;
-
     bool m_enableDiagnostics = false;
     QString m_diagnosticsDirectory;
 
     QString buildDiagnosticPath(const QString& fileName) const;
-
-    vtkSmartPointer<vtkMatrix4x4> m_lastRegistrationTransform;
 
     vtkSmartPointer<vtkPolyData> cropStlInVtk(
         vtkSmartPointer<vtkPolyData> inputMesh, float extractionThickness);

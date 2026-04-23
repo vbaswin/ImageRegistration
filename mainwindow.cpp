@@ -2,6 +2,7 @@
 
 #include <vtkSphereSource.h>
 
+#include <QDebug>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QHBoxLayout>

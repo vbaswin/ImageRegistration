@@ -31,6 +31,7 @@
 #include <vtkPolyDataConnectivityFilter.h>
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
 #include <algorithm>
 #include <cmath>
@@ -43,6 +44,12 @@
 RegistrationModel::RegistrationModel(QObject *parent)
     : QObject{parent}
 {}
+
+void RegistrationModel::configureDiagnostics(bool enabled,
+                                             const QString& outputDirectory) {
+    m_enableDiagnostics = enabled;
+    m_diagnosticsDirectory = outputDirectory;
+}
 
 pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::convertVtkToPcl(
     vtkSmartPointer<vtkPolyData> polyData)
@@ -752,35 +759,53 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr RegistrationModel::extractByProximityMask(
     return extractedCloud;
 }
 
-void RegistrationModel::computeTransform(
+QString RegistrationModel::buildDiagnosticPath(const QString& fileName) const {
+    if (!m_enableDiagnostics || m_diagnosticsDirectory.isEmpty()) {
+        return QString();
+    }
+
+    QDir dir(m_diagnosticsDirectory);
+    return dir.filePath(fileName);
+}
+
+ImageRegistration::RegistrationResult RegistrationModel::computeTransform(
     vtkSmartPointer<vtkPolyData> sourceStl,
     vtkSmartPointer<vtkPolyData> targetEnamel,
     vtkSmartPointer<vtkPolyData> targetEntireJaw) {
+    ImageRegistration::RegistrationResult result;
+
+    result.transformMatrix->Identity();
+
+    auto diagnosticPath = [this](const QString& fileName) {
+        return buildDiagnosticPath(fileName).toStdString();
+    };
+
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclSource = convertVtkToPcl(sourceStl);
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclEnamel =
         convertVtkToPcl(targetEnamel);
     pcl::PointCloud<pcl::PointXYZ>::Ptr pclEntireJaw =
         convertVtkToPcl(targetEntireJaw);
 
-    saveDiagnosticPointCloud(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_enamel.ply",
-        *pclEnamel);
-    saveDiagnosticPointCloud(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_entire_jaw.ply",
-        *pclEntireJaw);
-    saveDiagnosticPointCloud(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/initial_source.ply",
-        *pclSource);
+    saveDiagnosticPointCloud(diagnosticPath("initial_enamel.ply"), *pclEnamel);
+    saveDiagnosticPointCloud(diagnosticPath("initial_entire_jaw.ply"),
+                             *pclEntireJaw);
+    saveDiagnosticPointCloud(diagnosticPath("initial_source.ply"), *pclSource);
 
-    vtkSmartPointer<vtkMatrix4x4> transform = vtkSmartPointer<vtkMatrix4x4>::New();
-    transform->Identity();
-
-    if (pclSource->points.empty() || pclEnamel->points.empty()) {
-        vtkSmartPointer<vtkMatrix4x4> transform = vtkSmartPointer<vtkMatrix4x4>::New();
-        transform->Identity();
-        // return transform;
-        return;
+    if (pclSource->points.empty()) {
+        result.message = "Source STL point cloud is empty.";
+        return result;
     }
+
+    if (pclEnamel->points.empty()) {
+        result.message = "Target enamel point cloud is empty.";
+        return result;
+    }
+
+    if (pclEntireJaw->points.empty()) {
+        result.message = "Target full jaw point cloud is empty.";
+        return result;
+    }
+
     QElapsedTimer stepTimer;
     stepTimer.start();
 
@@ -790,9 +815,8 @@ void RegistrationModel::computeTransform(
 
     auto morphTargetEnamel =
         applyMorphologicalClosing(pclEnamel, closingRadius, morphRes);
-    saveDiagnosticPointCloud(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/morph_enamel.ply",
-        *morphTargetEnamel);
+    saveDiagnosticPointCloud(diagnosticPath("morph_enamel.ply"),
+                             *morphTargetEnamel);
     // auto morphTargetEntireJaw =
     //     applyMorphologicalClosing(pclEntireJaw, 3.0f, 0.5f);
 
@@ -807,9 +831,8 @@ void RegistrationModel::computeTransform(
     // cropStlInVtk(sourceStl, 14.0f);
     pcl::PointCloud<pcl::PointXYZ>::Ptr newCroppedPcl =
         convertVtkToPcl(croppedSourceMesh);
-    saveDiagnosticPointCloud(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/new_cropped_source.ply",
-        *newCroppedPcl);
+    saveDiagnosticPointCloud(diagnosticPath("new_cropped_source.ply"),
+                             *newCroppedPcl);
 
     qDebug() << "Executing Diagnostic KD-Tree Jaw Extraction..."
              << stepTimer.restart();
@@ -819,16 +842,14 @@ void RegistrationModel::computeTransform(
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr kdtreeJawOutput =
         extractByProximityMask(croppedTarget, pclEntireJaw, 2.0f);
-    saveDiagnosticPointCloud(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/diagnostic_kdtree_jaw.ply",
-        *kdtreeJawOutput);
+    saveDiagnosticPointCloud(diagnosticPath("diagnostic_kdtree_jaw.ply"),
+                             *kdtreeJawOutput);
     // auto croppedTarget = extractTeethRegion(morphTargetEnamel, true, 4.0f);
     // pcl::io::savePLYFileASCII(
     //     "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_source.ply",
     //     *croppedSource);
-    saveDiagnosticPointCloud(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/cropped_target.ply",
-        *croppedTarget);
+    saveDiagnosticPointCloud(diagnosticPath("cropped_target.ply"),
+                             *croppedTarget);
 
     // A. preprocessing stage
     float voxelLeafSize = 0.8f;
@@ -839,12 +860,8 @@ void RegistrationModel::computeTransform(
     auto sourceDown = downsampleCloud(newCroppedPcl, voxelLeafSize);
     auto targetDown = downsampleCloud(kdtreeJawOutput, voxelLeafSize);
 
-    saveDiagnosticPointCloud(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/down_source.ply",
-        *sourceDown);
-    saveDiagnosticPointCloud(
-        "C:/Users/igrs/Desktop/Aswin/ImageReg_output/down_target.ply",
-        *targetDown);
+    saveDiagnosticPointCloud(diagnosticPath("down_source.ply"), *sourceDown);
+    saveDiagnosticPointCloud(diagnosticPath("down_target.ply"), *targetDown);
 
     /*
     auto sourceNormals = estimateNormals(sourceDown, normalRadius);
@@ -900,7 +917,13 @@ void RegistrationModel::computeTransform(
         performICPWithNormals(coarseSourceNormals, coarseTargetNormals,
                               fineSourceNormals, fineTargetNormals,
                               ransacTransform);
-    m_transformMatrix = absoluteLockedTransform;
+    m_lastRegistrationTransform = absoluteLockedTransform;
+
+    result.transformMatrix->DeepCopy(absoluteLockedTransform);
+    result.success = true;
+    result.message = "Registration completed.";
+
+    return result;
 }
 
 vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
@@ -1157,7 +1180,9 @@ vtkSmartPointer<vtkPolyData> RegistrationModel::cropStlInVtk(
 
 void RegistrationModel::saveDiagnosticCrop(
     vtkSmartPointer<vtkPolyData> inputStl, const QString& outputPath) {
-    if (!inputStl || inputStl->GetNumberOfPoints() == 0) return;
+    if (!m_enableDiagnostics || outputPath.isEmpty()) {
+        return;
+    }
 
     // Confined entirely inside the Math model
     vtkSmartPointer<vtkPolyData> croppedMesh = cropStlInVtk(inputStl, 8.0f);
@@ -1174,15 +1199,15 @@ void RegistrationModel::saveDiagnosticCrop(
 
 void RegistrationModel::saveDiagnosticPointCloud(
     const std::string& filename, const pcl::PointCloud<pcl::PointXYZ>& cloud) {
+    if (!m_enableDiagnostics || filename.empty()) {
+        return;
+    }
+
     if (QCoreApplication::arguments().contains("--debug-files")) {
         pcl::io::savePLYFileASCII(filename, cloud);
         // qDebug() << "Exported Diagnostic PointCloud:"
         // << QString::fromStdString(filename);
     }
-}
-
-vtkSmartPointer<vtkMatrix4x4> RegistrationModel::getTransformMatrix() {
-    return m_transformMatrix;
 }
 
 using Point3D = std::array<double, 3>;
@@ -1204,7 +1229,7 @@ double squaredDistance(const Point3D& a, const Point3D& b) {
 }
 
 void RegistrationModel::calculateRMS() {
-    if (!m_transformMatrix) {
+    if (!m_lastRegistrationTransform) {
         qDebug() << "Skipping RMSE: STL to CBCT transform matrix is null";
         return;
     }
@@ -1220,7 +1245,7 @@ void RegistrationModel::calculateRMS() {
     }
 
     vtkNew<vtkTransform> stlToCbctTransform;
-    stlToCbctTransform->SetMatrix(m_transformMatrix);
+    stlToCbctTransform->SetMatrix(m_lastRegistrationTransform);
 
     double sumSquaredDistance = 0.0;
 

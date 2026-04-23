@@ -20,15 +20,19 @@
 #include <Eigen/Dense>
 #include <QDebug>
 #include <QObject>
+#include <QString>
+
+#include "registration/RegistrationTypes.h"
 
 class RegistrationModel : public QObject {
     Q_OBJECT
 public:
     explicit RegistrationModel(QObject *parent = nullptr);
 
-    void computeTransform(vtkSmartPointer<vtkPolyData> sourceStl,
-                          vtkSmartPointer<vtkPolyData> targetEnamel,
-                          vtkSmartPointer<vtkPolyData> targetEntireJaw);
+    ImageRegistration::RegistrationResult computeTransform(
+        vtkSmartPointer<vtkPolyData> sourceStl,
+        vtkSmartPointer<vtkPolyData> targetEnamel,
+        vtkSmartPointer<vtkPolyData> targetEntireJaw);
 
     void saveDiagnosticCrop(vtkSmartPointer<vtkPolyData> inputStl,
                             const QString& outputPath);
@@ -37,13 +41,18 @@ public:
     void savePoints(std::array<double, 3>, bool isStl);
     void calculateRMS();
     void clearPoints();
-    vtkSmartPointer<vtkMatrix4x4> getTransformMatrix();
+    void configureDiagnostics(bool enabled, const QString& outputDirectory);
 
    private:
     std::vector<std::array<double, 3>> m_stlPoints;
     std::vector<std::array<double, 3>> m_cbctPoints;
 
-    vtkSmartPointer<vtkMatrix4x4> m_transformMatrix;
+    bool m_enableDiagnostics = false;
+    QString m_diagnosticsDirectory;
+
+    QString buildDiagnosticPath(const QString& fileName) const;
+
+    vtkSmartPointer<vtkMatrix4x4> m_lastRegistrationTransform;
 
     vtkSmartPointer<vtkPolyData> cropStlInVtk(
         vtkSmartPointer<vtkPolyData> inputMesh, float extractionThickness);

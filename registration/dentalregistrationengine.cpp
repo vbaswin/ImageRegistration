@@ -1,5 +1,7 @@
 #include "DentalRegistrationEngine.h"
 
+#include <QString>
+
 #include "../registrationmodel.h"
 #include "VtkImageSurfaceExtractor.h"
 
@@ -62,22 +64,12 @@ RegistrationResult DentalRegistrationEngine::registerStlToImage(
         return result;
     }
 
-    m_registrationModel->computeTransform(input.sourceStl, targetEnamel,
-                                          targetEntireJaw);
+    m_registrationModel->configureDiagnostics(
+        settings.enableDiagnostics,
+        QString::fromStdString(settings.diagnosticsDirectory));
 
-    vtkSmartPointer<vtkMatrix4x4> transform =
-        m_registrationModel->getTransformMatrix();
-
-    if (!transform) {
-        result.message = "Registration did not produce a transform matrix.";
-        return result;
-    }
-
-    result.transformMatrix->DeepCopy(transform.GetPointer());
-    result.success = true;
-    result.message = "Registration completed.";
-
-    return result;
+    return m_registrationModel->computeTransform(input.sourceStl, targetEnamel,
+                                                 targetEntireJaw);
 }
 
 }  // namespace ImageRegistration
